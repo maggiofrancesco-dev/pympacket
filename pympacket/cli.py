@@ -44,7 +44,7 @@ class ImpacketCLI(cmd.Cmd):
 
         hashes = npu.run()
 
-        for index, hash in enumerate(hashes):
+        for hash in hashes:
             # Split the hash by `$` to isolate the user@domain part
             user_realm = hash.split('$')[3]
 
@@ -62,6 +62,8 @@ class ImpacketCLI(cmd.Cmd):
         """List found vulnerable hases."""
         for hash in self.found_hashes:
             print(f'{hash}\n')
+        if len(self.found_hashes) == 0:
+            print('No hashes stored in memory.')
 
     def do_quit(self, line):
         """Exit the CLI."""
