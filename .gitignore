@@ -1,0 +1,3 @@
+.venv
+pympacket/__pycache__
+pympacket/attacks/__pycache__
