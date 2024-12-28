@@ -232,8 +232,7 @@ class GetUserNoPreAuth:
 
     def run(self):
         if self.__usersFile:
-            self.request_users_file_TGTs()
-            return
+            return self.request_users_file_TGTs()
 
         if self.__kdcHost is not None:
             self.__target = self.__kdcHost
@@ -244,13 +243,15 @@ class GetUserNoPreAuth:
                 self.__target = self.__domain
 
             if self.__doKerberos:
-                logging.info('Getting machine hostname')
+                if self.__verbose:
+                    logging.info('Getting machine hostname')
                 self.__target = self.getMachineName(self.__target)
 
         # Are we asked not to supply a password?
         if self.__doKerberos is False and self.__no_pass is True:
             # Yes, just ask the TGT and exit
-            logging.info('Getting TGT for %s' % self.__username)
+            if self.__verbose:
+                logging.info('Getting TGT for %s' % self.__username)
             entry = self.getTGT(self.__username)
             self.outputTGT(entry, None)
             return
@@ -274,7 +275,8 @@ class GetUserNoPreAuth:
                                                  self.__aesKey, kdcHost=self.__kdcIP)
             else:
                 # Cannot authenticate, we will try to get this users' TGT (hoping it has PreAuth disabled)
-                logging.info('Cannot authenticate %s, getting its TGT' % self.__username)
+                if self.__verbose:
+                    logging.info('Cannot authenticate %s, getting its TGT' % self.__username)
                 entry = self.getTGT(self.__username)
                 self.outputTGT(entry, None)
                 return
@@ -286,30 +288,34 @@ class GetUserNoPreAuth:
                        (UF_DONT_REQUIRE_PREAUTH, UF_ACCOUNTDISABLE)
 
         try:
-            logging.debug('Search Filter=%s' % searchFilter)
+            if self.__verbose:
+                logging.debug('Search Filter=%s' % searchFilter)
             resp = ldapConnection.search(searchFilter=searchFilter,
                                          attributes=['sAMAccountName',
                                                      'pwdLastSet', 'MemberOf', 'userAccountControl', 'lastLogon'],
                                          sizeLimit=999)
         except ldap.LDAPSearchError as e:
             if e.getErrorString().find('sizeLimitExceeded') >= 0:
-                logging.debug('sizeLimitExceeded exception caught, giving up and processing the data received')
+                if self.__verbose:
+                    logging.debug('sizeLimitExceeded exception caught, giving up and processing the data received')
                 # We reached the sizeLimit, process the answers we have already and that's it. Until we implement
                 # paged queries
                 resp = e.getAnswers()
                 pass
             else:
                 if str(e).find('NTLMAuthNegotiate') >= 0:
-                    logging.critical("NTLM negotiation failed. Probably NTLM is disabled. Try to use Kerberos "
+                    if self.__verbose:
+                        logging.critical("NTLM negotiation failed. Probably NTLM is disabled. Try to use Kerberos "
                                      "authentication instead.")
                 else:
-                    if self.__kdcIP is not None and self.__kdcHost is not None:
+                    if self.__kdcIP is not None and self.__kdcHost is not None and self.__verbose:
                         logging.critical("If the credentials are valid, check the hostname and IP address of KDC. They "
                                          "must match exactly each other")
                 raise
 
         answers = []
-        logging.debug('Total of records returned %d' % len(resp))
+        if self.__verbose:
+            logging.debug('Total of records returned %d' % len(resp))
 
         for item in resp:
             if isinstance(item, ldapasn1.SearchResultEntry) is not True:
@@ -347,35 +353,37 @@ class GetUserNoPreAuth:
                 pass
 
         if len(answers)>0:
-            self.printTable(answers, header=[ "Name", "MemberOf", "PasswordLastSet", "LastLogon", "UAC"])
-            print('\n\n')
-
-            if self.__requestTGT is True:
-                usernames = [answer[0] for answer in answers]
-                self.request_multiple_TGTs(usernames)
+            if self.__verbose:
+                self.printTable(answers, header=[ "Name", "MemberOf", "PasswordLastSet", "LastLogon", "UAC"])
+                print('\n\n')
+            
+            usernames = [answer[0] for answer in answers]
+            return self.request_multiple_TGTs(usernames)
 
         else:
-            print("No entries found!")
+            raise Exception('No NPAs found!')
 
     def request_users_file_TGTs(self):
         with open(self.__usersFile) as fi:
             usernames = [line.strip() for line in fi]
 
-        self.request_multiple_TGTs(usernames)
+        return self.request_multiple_TGTs(usernames)
 
     def request_multiple_TGTs(self, usernames):
+        tgts = []
         if self.__outputFileName is not None:
             fd = open(self.__outputFileName, 'w+')
         else:
             fd = None
         for username in usernames:
             try:
-                entry = self.getTGT(username)
-                self.outputTGT(entry, fd)
+                tgts.append(self.getTGT(username))
             except Exception as e:
-                logging.error('%s' % str(e))
+                if self.__verbose:
+                    logging.error('%s' % str(e))
         if fd is not None:
             fd.close()
+        return tgts
 
 
 

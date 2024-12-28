@@ -1,12 +1,6 @@
 from Crypto.Cipher import ARC4
 from Crypto.Hash import MD4, HMAC, MD5
 from binascii import unhexlify
-from pydantic import BaseModel
-
-class Target(BaseModel):
-    username: str
-    domain: str
-    hash: str
 
 def utf16le_encode(data):
     """Encodes a string to UTF-16LE."""
