@@ -110,6 +110,8 @@ domain = "contoso.local"
 user = "l.douglas"
 password = "Football1"
 domain_base = get_domain_base(domain)
+#nt_hash = "E3162FC537E66F4DC1287271CDBEC59B"
+#password = f"aad3c435b514a4eeaad3b935b51304fe:{nt_hash}"
 
 server = ldap3.Server(host=dc_ip, port=389, use_ssl=False)
 conn = ldap3.Connection(server, user=f"{domain}\\{user}", password=password, auto_bind=True, authentication=ldap3.NTLM)

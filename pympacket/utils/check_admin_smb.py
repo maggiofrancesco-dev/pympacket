@@ -2,9 +2,17 @@ from impacket.smbconnection import SMBConnection
 from impacket.dcerpc.v5 import scmr
 from impacket.dcerpc.v5.transport import SMBTransport
 
-def check_admin_smb(target, username, password, domain):
-    smb_conn = SMBConnection(target, target)
-    smb_conn.login(user=username, password=password, domain=domain)
+def check_admin_smb(target, username, domain, password='', nthash=''):
+    try:
+        smb_conn = SMBConnection(target, target)
+    except:
+        print("Host unreachable.")
+        return None # or return False
+    try:
+        smb_conn.login(user=username, password=password, nthash=nthash, domain=domain)
+    except:
+        print("Invalid credentials.")
+        return None # or return False
 
     try:
         # Start DCE/RPC Transport session via the established smb session on port 445, targeting the "\svcctl" named pipe
@@ -29,6 +37,6 @@ def check_admin_smb(target, username, password, domain):
         except scmr.DCERPCException:
             return False
 
-#admin = check_admin_smb("95.246.252.45", "d.garza", "m@#+dBt~\"\\ig", "contoso.local") # Admin
-admin = check_admin_smb("95.246.252.45", "l.douglas", "Football1", "contoso.local") # Normal User
+#admin = check_admin_smb(target="95.246.252.45", username="d.garza", password="m@#+dBt~\"\\ig", domain="contoso.local") # Admin
+admin = check_admin_smb(target="192.168.56.132", username="l.douglas", nthash="E3162FC537E66F4DC1287271CDBEC59B", domain="contoso.local") # Normal User
 print(admin)
