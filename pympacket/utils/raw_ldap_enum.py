@@ -1,7 +1,22 @@
 import ldap3
 import struct
 from dns import resolver
+import sys
 from pprint import pprint
+
+def ldap_login(target, user, password, domain):
+    domain_base = get_domain_base(domain)
+    try:
+        server = ldap3.Server(host=target, port=389, use_ssl=False)
+    except:
+        print("Host unreachable, the target provided must be the DC.", file=sys.stderr)
+        return None
+    try:
+        conn = ldap3.Connection(server, user=f"{domain}\\{user}", password=password, auto_bind=True, authentication=ldap3.NTLM)
+    except:
+        print("Invalid credentials provided.", file=sys.stderr)
+        return None
+    return conn, domain_base
 
 def get_domain_base(domain):
     domain_base = ''
@@ -105,18 +120,10 @@ def enum_computers(conn, domain_base, dc_ip):
         computers.append(computer)
     return computers
 
-dc_ip = "192.168.56.133"
-domain = "contoso.local"
-user = "l.douglas"
-password = "Football1"
-domain_base = get_domain_base(domain)
-#nt_hash = "E3162FC537E66F4DC1287271CDBEC59B"
-#password = f"aad3c435b514a4eeaad3b935b51304fe:{nt_hash}"
 
-server = ldap3.Server(host=dc_ip, port=389, use_ssl=False)
-conn = ldap3.Connection(server, user=f"{domain}\\{user}", password=password, auto_bind=True, authentication=ldap3.NTLM)
+conn, domain_base = ldap_login(target="192.168.56.133", user="l.douglas", password="Football1", domain="contoso.local")
 
 print(domain_sid(conn, domain_base))
 print(group_member(conn, domain_base, "Domain Admins"))
 pprint(enum_users(conn, domain_base))
-pprint(enum_computers(conn, domain_base, dc_ip))
+pprint(enum_computers(conn, domain_base, "192.168.56.133"))

