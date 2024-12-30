@@ -40,4 +40,6 @@ def check_admin_smb(target, username, domain, password='', nthash=''):
 
 #admin = check_admin_smb(target="95.246.252.45", username="d.garza", password="m@#+dBt~\"\\ig", domain="contoso.local") # Admin
 admin = check_admin_smb(target="192.168.56.133", username="l.douglas", nthash="E3162FC537E66F4DC1287271CDBEC59B", domain="contoso.local") # Normal User
+
+# Returns True if admin, False if not admin, and None if error
 print(admin)

