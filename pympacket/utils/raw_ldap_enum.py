@@ -123,7 +123,17 @@ def enum_computers(conn, domain_base, dc_ip):
 
 conn, domain_base = ldap_login(target="192.168.56.133", user="l.douglas", password="Football1", domain="contoso.local")
 
+# Output is a string containing the Domain SID
 print(domain_sid(conn, domain_base))
+
+# Output is a list og group members in the following format:
+# ['m.summers', 'd.garza', 'Administrator']
 print(group_member(conn, domain_base, "Domain Admins"))
+
+# Output is a list of dict in the following format:
+# {'Description':'', 'adminCount':1, 'memberOf':['WebAdmins', 'Domain Admins'], 'rid':'1657', 'username':'m.summers'}
 pprint(enum_users(conn, domain_base))
+
+# Output is a list of dict in the following format:
+# {'dns_hostname':'DC01.contoso.local', 'ip_address':'192.168.56.133', 'is_dc':True, 'name':'DC01$'}
 pprint(enum_computers(conn, domain_base, "192.168.56.133"))
