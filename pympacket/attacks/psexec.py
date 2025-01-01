@@ -97,7 +97,8 @@ class PSEXEC:
             rpctransport.set_credentials(self.__username, self.__password, self.__domain, self.__lmhash,
                                          self.__nthash, self.__aesKey)
         rpctransport.set_kerberos(self.__doKerberos, self.__kdcHost)
-        self.doStuff(rpctransport)
+        result = self.doStuff(rpctransport)
+        return result
 
     def openPipe(self, s, tid, pipe, accessMask):
         pipeReady = False
@@ -127,8 +128,11 @@ class PSEXEC:
             if logging.getLogger().level == logging.DEBUG:
                 import traceback
                 traceback.print_exc()
-            logging.critical(str(e))
-            sys.exit(1)
+            # Modified
+            #logging.critical(str(e))
+            #sys.exit(1)
+            print(f"Invalid credentials provided. {str(e)}", file=sys.stderr)
+            return None
 
         global dialect
         dialect = rpctransport.get_smb_connection().getDialect()
@@ -149,8 +153,16 @@ class PSEXEC:
                     sys.exit(1)
                 installService = serviceinstall.ServiceInstall(rpctransport.get_smb_connection(), f, self.__serviceName, self.__remoteBinaryName)
 
+            # Added
+            logging.disable(sys.maxsize)
+
             if installService.install() is False:
-                return
+                # Modified
+                print("No writable shares found, the user provided doesn't have enough privileges.", file=sys.stderr)
+                return None
+            
+            # Added
+            logging.getLogger().setLevel(logging.INFO)
 
             if self.__exeFile is not None:
                 f.close()
@@ -195,7 +207,11 @@ class PSEXEC:
             stderr_pipe.start()
 
             # And we stay here till the end
-            ans = s.readNamedPipe(tid,fid_main,8)
+            # Modified
+            try:
+                ans = s.readNamedPipe(tid,fid_main,8)
+            except KeyboardInterrupt:
+                pass
 
             if len(ans):
                 retCode = RemComResponse(ans)
@@ -206,10 +222,13 @@ class PSEXEC:
                 # We copied a file for execution, let's remove it
                 s.deleteFile(installService.getShare(), os.path.basename(self.__copyFile))
             unInstalled = True
-            sys.exit(retCode['ErrorCode'])
+            # Modified
+            #sys.exit(retCode['ErrorCode'])
+            return True# Positive
 
         except SystemExit:
-            raise
+            # Modified
+            return None
         except Exception as e:
             if logging.getLogger().level == logging.DEBUG:
                 import traceback
@@ -220,7 +239,8 @@ class PSEXEC:
                 if self.__copyFile is not None:
                     s.deleteFile(installService.getShare(), os.path.basename(self.__copyFile))
             sys.stdout.flush()
-            sys.exit(1)
+            # Modified
+            return True
 
 
 class Pipes(Thread):
