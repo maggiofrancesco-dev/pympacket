@@ -87,6 +87,7 @@ database
 server
 changeme
 change
+Batman1
 sqlserver2000
 sqlserver2005
 Sqlserver

