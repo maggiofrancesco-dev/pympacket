@@ -33,6 +33,7 @@ import datetime
 import logging
 import random
 import sys
+import signal
 from binascii import hexlify
 
 from pyasn1.codec.der import decoder, encoder
@@ -48,6 +49,13 @@ from impacket.krb5.kerberosv5 import sendReceive, KerberosError
 from impacket.krb5.types import KerberosTime, Principal
 from impacket.ldap import ldap, ldapasn1
 from impacket.smbconnection import SMBConnection, SessionError
+
+def timeout_handler(signum, frame):
+    """Signal handler to raise TimeoutException."""
+    raise TimeoutError("Operation timed out!")
+
+# Set up the timeout mechanism
+signal.signal(signal.SIGALRM, timeout_handler)
 
 
 class GetUserNoPreAuth:
@@ -231,6 +239,7 @@ class GetUserNoPreAuth:
             fd.write(entry + '\n')
 
     def run(self):
+        print('Scanning for vulnerable accounts...')
         if self.__usersFile:
             return self.request_users_file_TGTs()
 
@@ -258,12 +267,16 @@ class GetUserNoPreAuth:
 
         # Connect to LDAP
         try:
+            signal.alarm(10)
             ldapConnection = ldap.LDAPConnection('ldap://%s' % self.__target, self.baseDN, self.__kdcIP)
             if self.__doKerberos is not True:
                 ldapConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
             else:
                 ldapConnection.kerberosLogin(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash,
                                              self.__aesKey, kdcHost=self.__kdcIP)
+        except TimeoutError as e:
+            print("Coudln't connect to domain controller ip.")
+            return []
         except ldap.LDAPSessionError as e:
             if str(e).find('strongerAuthRequired') >= 0:
                 # We need to try SSL
@@ -280,6 +293,8 @@ class GetUserNoPreAuth:
                 entry = self.getTGT(self.__username)
                 self.outputTGT(entry, None)
                 return
+        finally:
+            signal.alarm(0)
 
 
         # Building the search filter

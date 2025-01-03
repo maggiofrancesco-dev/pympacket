@@ -83,18 +83,12 @@ def verify_hash(password, hash, hash_type):
     # Step 7: Compare the computed checksum with the original checksum (edata1)
     return computed_checksum[:16] == parsed_hash['checksum']
 
-def bruteforce_asrep(wordlist, hash):
+def bruteforce(wordlist, hash, type):
+    if(type not in ['asrep', 'tgs']):
+        raise ValueError(f"Type must be either asrep or tgs")
     with open(wordlist, 'r') as wordlist:
         for line in wordlist:
             password = line.strip()
-            if verify_hash(password, hash, 'asrep'):
-                return password
-        return None
-
-def bruteforce_tgs(wordlist, hash):
-    with open(wordlist, 'r') as wordlist:
-        for line in wordlist:
-            password = line.strip()
-            if verify_hash(password, hash, 'tgs'):
+            if verify_hash(password, hash, type):
                 return password
         return None

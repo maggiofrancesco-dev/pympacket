@@ -2,7 +2,7 @@ from pympacket.attacks.GetNPUsers import GetUserNoPreAuth
 from argparse import Namespace
 import sys
 import logging
-from pympacket.utils.bruteforce import bruteforce_asrep
+from pympacket.utils.bruteforce import bruteforce
 
 def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=None):
     if nthash is not None:
@@ -59,6 +59,6 @@ print(asrep_out)
 
 if asrep_out is not None:
     for asrep in asrep_out:
-        result = bruteforce_asrep('fasttrack.txt', asrep['asrep'])
+        result = bruteforce('fasttrack.txt', asrep['asrep'], 'asrep')
         if result is not None:
             print(f"{asrep['username']}:{result}")

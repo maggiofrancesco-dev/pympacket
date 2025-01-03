@@ -1,5 +1,5 @@
 from pympacket.attacks.GetUserSPNs import GetUserSPNs
-from pympacket.utils.bruteforce import bruteforce_tgs
+from pympacket.utils.bruteforce import bruteforce
 from argparse import Namespace
 import logging
 import sys
@@ -42,6 +42,6 @@ pprint(tgs_out)
 
 if tgs_out is not None:
     for tgs in tgs_out:
-        result = bruteforce_tgs('fasttrack.txt', tgs['tgs'])
+        result = bruteforce('fasttrack.txt', tgs['tgs'], 'tgs')
         if result is not None:
             print(f"{tgs['username']}:{result}")
