@@ -35,8 +35,8 @@ class ImpacketCLI(cmd.Cmd):
             if not (args.username and args.password) and not args.wordlist:
                 parser.error("Username and password or a wordlist are required.")
         except SystemExit:
-            print("Invalid arguments. Use 'help get_users' for usage details.")
-            parser.print_help()
+            print("Invalid arguments. Use 'help enum' for usage details.")
+            quit()
 
         cmdLineOptions = {"no_pass": True if args.wordlist else False, "usersfile": args.wordlist, "k": False, 'verbose': args.verbose}
 
