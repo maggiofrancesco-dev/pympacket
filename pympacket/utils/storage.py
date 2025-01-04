@@ -1,17 +1,12 @@
 import os
 import json
 from pydantic import BaseModel
-
-class User(BaseModel):
-    username: str
-    password: str
-    hash: str
-    type: str
+from pympacket.models.common import CrackedUser, Hash
 
 class Storage(BaseModel):
     found_users: list[str] = []
-    found_hashes: list[str] = []
-    cracked_hashes: list[User] = []
+    found_hashes: list[Hash] = []
+    cracked_hashes: list[CrackedUser] = []
 
 STORAGE_FILE = "storage"
 SECRET_KEY = "20LqnLTCr9JWeWYRjH5LdnVO+5C3EN9b6Je43PpEfXSXx6wkd03tJKtWNebjOifS"  # Simple static key for XOR
@@ -41,8 +36,13 @@ def save_storage(data: Storage):
 
 def load_storage() -> Storage:
     """Load and decrypt data from the storage file."""
-    if not os.path.exists(STORAGE_FILE):
-        return Storage()  # Return empty storage if the file doesn't exist
-    with open(STORAGE_FILE, "rb") as storage_file:
-        encrypted_data = storage_file.read()
-    return decrypt_data(encrypted_data)
+    try:
+        if not os.path.exists(STORAGE_FILE):
+            return Storage()  # Return empty storage if the file doesn't exist
+        with open(STORAGE_FILE, "rb") as storage_file:
+            encrypted_data = storage_file.read()
+        return decrypt_data(encrypted_data)
+    except:
+        storage = Storage()
+        save_storage(storage)
+        return storage

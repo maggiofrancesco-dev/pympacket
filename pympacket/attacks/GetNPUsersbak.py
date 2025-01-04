@@ -277,6 +277,9 @@ class GetUserNoPreAuth:
         except TimeoutError as e:
             print("Coudln't connect to domain controller ip.")
             return []
+        except ConnectionResetError as e:
+            print(f"Connection reset by peer. Possible reasons could be network issues or server unavailability.", file=sys.stderr)
+            return []
         except ldap.LDAPSessionError as e:
             if str(e).find('strongerAuthRequired') >= 0:
                 # We need to try SSL

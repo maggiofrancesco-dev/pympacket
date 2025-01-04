@@ -3,7 +3,9 @@ import argparse
 import re
 from pympacket.utils.bruteforce import bruteforce
 from pympacket.attacks.GetNPUsersbak import GetUserNoPreAuth
-from pympacket.utils.storage import load_storage, save_storage, Storage, User
+from pympacket.utils.storage import load_storage, save_storage, Storage
+from pympacket.utils.kerberoasting import kerberoast
+from pympacket.models.common import Hash, CrackedUser
 from typing import Any
 import os
 
@@ -14,9 +16,9 @@ def ipv4_address(value):
         raise argparse.ArgumentTypeError(f"Invalid IPv4 address: {value}")
     return value
 
-def extract_user(hash: str):
+def extract_user(hash: Hash):
     # Split the hash by `$` to isolate the user@domain part
-    user_realm = hash.split('$')[3]
+    user_realm = hash.value.split('$')[3]
 
     # Split the user@domain part by `@` to get only the user
     return user_realm.split('@')[0]
@@ -31,20 +33,17 @@ class ImpacketCLI(cmd.Cmd):
         super().__init__()
         self.storage = load_storage()
 
-    def save_hash(self, hash: str):
+    def save_hash(self, hash: Hash):
         user = extract_user(hash)
         if user not in self.storage.found_users:
             self.storage.found_users.append(user)
             self.storage.found_hashes.append(hash)
         else:
             self.storage.found_hashes[self.storage.found_users.index(user)] = hash
-        self.storage.found_hashes = self.storage.found_hashes
-        self.storage.found_users = self.storage.found_users
         save_storage(self.storage)
 
-    def save_password(self, password: str, hash: str, type: str):
-        self.storage.cracked_hashes.append(User(username=extract_user(hash), password=password, hash=hash, type=type))
-        self.storage.cracked_hashes = self.storage.cracked_hashes
+    def save_password(self, password: str, hash: Hash):
+        self.storage.cracked_hashes.append(CrackedUser(username=extract_user(hash), password=password, hash=hash))
         save_storage(self.storage)
 
     
@@ -60,26 +59,33 @@ class ImpacketCLI(cmd.Cmd):
         group.add_argument('-p', '--password', type=str, required=False, help='The password to test.')
         group.add_argument('-w', '--wordlist', type=str, required=False, help='The wordlist containing the users to test.')
         group.add_argument('-v', '--verbose', type=bool, required=False, help='Whether to print the process or not.')
-        group.add_argument('-t', '--type', type=str, choices=['all', 'asrep', 'spn', 'ldap'] , required=False, default='all', help='What kind of enumeration to perform.')
+        group.add_argument('-t', '--type', type=str, choices=['auto', 'asrep', 'spn', 'ldap'] , required=False, default='auto', help='What kind of enumeration to perform.')
 
         try:
             args = parser.parse_args(args.split())
             if not (args.username and args.password) and not args.wordlist:
                 parser.error("Username and password or a wordlist are required.")
+            if args.type == 'spn' and not (args.username and args.password):
+                parser.error("Username and password are required to perform SPNs enumeration.")
+            if args.type == 'ldap' and not (args.username and args.password):
+                parser.error("Username and password are required to perform LDAP enumeration.")
 
 
             cmdLineOptions = {"no_pass": True if args.wordlist else False, "usersfile": args.wordlist, "k": False, 'verbose': args.verbose, "dc_host": None, "dc_ip": args.dc_ip}
 
             npu = GetUserNoPreAuth(username=args.username, password=args.password, domain=args.domain, cmdLineOptions=cmdLineOptions)
 
-            print(args.type)
-
             # TODO: Add enumeration for spns users and ldap when with credentials
 
             hashes = npu.run()
 
             for hash in hashes:
-                self.save_hash(hash)
+                self.save_hash(Hash(value=hash, type='asrep'))
+
+            if args.type == 'spn' or (args.type == 'auto' and args.username and args.password):
+                users = kerberoast(username=args.username, domain=args.domain, dc_ip=args.dc_ip, password=args.password)
+                for user in users:
+                    self.save_hash(user.hash)
 
             print(f'Found {len(hashes)} vulnerable hashes.')
 
@@ -91,7 +97,7 @@ class ImpacketCLI(cmd.Cmd):
         parser = argparse.ArgumentParser(prog='bruteforce', description='Performs an offline bruteforce.')
 
         parser.add_argument('-w', '--wordlist', type=str, required=True, help='The wordlist containing the users to test.')
-        parser.add_argument('-t', '--type', type=str, choices=['asrep', 'tgs'], required=True, help='The wordlist containing the users to test.')
+        parser.add_argument('-t', '--type', type=str, choices=['auto', 'asrep', 'tgs'], required=False, default='auto', help='The wordlist containing the users to test.')
         parser.add_argument('-v', '--verbose', type=bool, required=False, help='Whether to print the process or not.')
 
         try:
@@ -102,10 +108,11 @@ class ImpacketCLI(cmd.Cmd):
         found_passwords = 0
         
         for hash in self.storage.found_hashes:
-            password = bruteforce(args.wordlist, hash, args.type)
-            if password:
-                found_passwords+=1
-                self.save_password(password, hash, args.type)
+            if (args.type == hash.type or args.type == 'auto'):
+                password = bruteforce(args.wordlist, hash)
+                if password:
+                    found_passwords+=1
+                    self.save_password(password, hash)
 
         print(f'Cracked {found_passwords} vulnerable hashes.')
 
