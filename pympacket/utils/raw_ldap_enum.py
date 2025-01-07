@@ -112,7 +112,7 @@ def enum_computers(conn, domain_base, dc_ip):
 
         if len(entry['dNSHostName'].raw_values):
             computer['dns_hostname'] = (entry['dNSHostName'].raw_values)[0].decode("utf-8")
-            answer = res.resolve(computer['dns_hostname'])
+            answer = res.resolve(computer['dns_hostname'], tcp=True)
             computer['ip_address'] = answer[0].address
         else:
             computer['dns_hostname'] = ""
@@ -121,8 +121,7 @@ def enum_computers(conn, domain_base, dc_ip):
     return computers
 
 
-conn, domain_base = ldap_login(target="192.168.56.133", user="l.douglas", password="Football1", domain="contoso.local")
-
+conn, domain_base = ldap_login(target="87.0.192.165", user="l.douglas", password="Football1", domain="contoso.local")
 # Output is a string containing the Domain SID
 print(domain_sid(conn, domain_base))
 
@@ -136,4 +135,4 @@ pprint(enum_users(conn, domain_base))
 
 # Output is a list of dict in the following format:
 # {'dns_hostname':'DC01.contoso.local', 'ip_address':'192.168.56.133', 'is_dc':True, 'name':'DC01$'}
-pprint(enum_computers(conn, domain_base, "192.168.56.133"))
+pprint(enum_computers(conn, domain_base, "87.0.192.165"))
