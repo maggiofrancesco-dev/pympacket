@@ -1,6 +1,7 @@
 from Crypto.Cipher import ARC4
 from Crypto.Hash import MD4, HMAC, MD5
 from binascii import unhexlify
+from pympacket.models.common import Hash
 
 def utf16le_encode(data):
     """Encodes a string to UTF-16LE."""
@@ -83,18 +84,10 @@ def verify_hash(password, hash, hash_type):
     # Step 7: Compare the computed checksum with the original checksum (edata1)
     return computed_checksum[:16] == parsed_hash['checksum']
 
-def bruteforce_asrep(wordlist, hash):
+def bruteforce(wordlist, hash: Hash):
     with open(wordlist, 'r') as wordlist:
         for line in wordlist:
             password = line.strip()
-            if verify_hash(password, hash, 'asrep'):
-                return password
-        return None
-
-def bruteforce_tgs(wordlist, hash):
-    with open(wordlist, 'r') as wordlist:
-        for line in wordlist:
-            password = line.strip()
-            if verify_hash(password, hash, 'tgs'):
+            if verify_hash(password, hash.value, hash.type):
                 return password
         return None

