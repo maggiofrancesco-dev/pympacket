@@ -11,3 +11,9 @@ class User(BaseModel):
 
 class CrackedUser(User):
     password: str
+
+class Computer(BaseModel):
+    name: str
+    is_dc: bool
+    dns_hostname: str
+    ip_address: str

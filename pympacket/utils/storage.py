@@ -1,12 +1,13 @@
 import os
 import json
 from pydantic import BaseModel
-from pympacket.models.common import CrackedUser, Hash
+from pympacket.models.common import CrackedUser, Hash, Computer
 
 class Storage(BaseModel):
     found_users: list[str] = []
     found_hashes: list[Hash] = []
     cracked_hashes: list[CrackedUser] = []
+    computers: list[Computer] = []
 
 STORAGE_FILE = "storage"
 SECRET_KEY = "20LqnLTCr9JWeWYRjH5LdnVO+5C3EN9b6Je43PpEfXSXx6wkd03tJKtWNebjOifS"  # Simple static key for XOR

