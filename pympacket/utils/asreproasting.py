@@ -53,7 +53,7 @@ def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=N
 # [{'username':'svc_sql', 'asrep':'$krb5asrep$...'}]
 
 #asrep_out = asreproast(dc_ip='192.168.56.133', domain='contoso.local', usersfile='SamAccountNames.txt') # Unauth
-asrep_out = asreproast(dc_ip='192.168.56.133', username='l.douglas', password='Football1', domain='contoso.local') # Auth
+#asrep_out = asreproast(dc_ip='192.168.56.133', username='l.douglas', password='Football1', domain='contoso.local') # Auth
 
 #print(asrep_out)
 #

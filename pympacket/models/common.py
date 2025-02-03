@@ -8,8 +8,6 @@ class Hash(BaseModel):
 class User(BaseModel):
     username: str
     hash: Hash
-
-class CrackedUser(User):
     password: str
 
 class Computer(BaseModel):

