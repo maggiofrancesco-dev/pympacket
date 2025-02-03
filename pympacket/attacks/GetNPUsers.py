@@ -49,7 +49,6 @@ from impacket.krb5.types import KerberosTime, Principal
 from impacket.ldap import ldap, ldapasn1
 from impacket.smbconnection import SMBConnection, SessionError
 
-
 class GetUserNoPreAuth:
     @staticmethod
     def printTable(items, header):

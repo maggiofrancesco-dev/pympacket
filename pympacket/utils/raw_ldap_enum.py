@@ -2,7 +2,7 @@ import ldap3
 import struct
 from dns import resolver
 import sys
-from pprint import pprint
+#from pprint import pprint
 
 class ldap_enum():
     def __init__(self):

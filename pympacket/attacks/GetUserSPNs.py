@@ -53,6 +53,9 @@ from impacket.ldap import ldap, ldapasn1
 from impacket.smbconnection import SMBConnection, SessionError
 from impacket.ntlm import compute_lmhash, compute_nthash
 
+# Added
+from pympacket.models.common import User, Hash
+
 
 class GetUserSPNs:
     @staticmethod
@@ -429,6 +432,11 @@ class GetUserSPNs:
                     # Added
                     tgs_out = {}
 
+                    current_user = User()
+                    current_user.username = user
+                    current_hash = Hash()
+                    current_hash.spn = SPN 
+
                     # Added
                     tgs_out['username'] = user
                     tgs_out['spn'] = SPN
@@ -447,9 +455,14 @@ class GetUserSPNs:
                                                                                 TGT['sessionKey'])
                         
                         # Modified
-                        tgs_out['tgs'] = self.outputTGS(tgs, oldSessionKey, sessionKey, sAMAccountName,
+                        #tgs_out['tgs'] = self.outputTGS(tgs, oldSessionKey, sessionKey, sAMAccountName,
+                        #               self.__targetDomain + "/" + sAMAccountName, fd)
+                        current_hash.type = 'tgs'
+                        current_hash.value = self.outputTGS(tgs, oldSessionKey, sessionKey, sAMAccountName,
                                        self.__targetDomain + "/" + sAMAccountName, fd)
-                        krbroasting_out.append(tgs_out)
+                        current_user.krb_hash = current_hash
+                        krbroasting_out.append(current_user)
+                        #krbroasting_out.append(tgs_out)
 
                     except Exception as e:
                         logging.debug("Exception:", exc_info=True)

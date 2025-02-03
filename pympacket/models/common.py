@@ -2,16 +2,25 @@ from pydantic import BaseModel
 from typing import Literal
 
 class Hash(BaseModel):
-    value: str
-    type: Literal['asrep', 'tgs']
+    value: str = None
+    type: Literal['asrep', 'tgs'] = []
+    spn: str = None
 
 class User(BaseModel):
-    username: str
-    hash: Hash
-    password: str
+    username: str = None
+    krb_hash: list[Hash] = []
+    nthash: str = None
+    password: str = None
 
 class Computer(BaseModel):
-    name: str
-    is_dc: bool
-    dns_hostname: str
-    ip_address: str
+    name: str = None
+    dns_name: str = None
+    ip_address: str = None
+    dc: bool = False
+
+class Domain(BaseModel):
+    name: str = None
+    sid: str = None
+    dc: list[str] = []
+    domain_admins: list[str] = []
+    domain_computers: list[Computer] = []

