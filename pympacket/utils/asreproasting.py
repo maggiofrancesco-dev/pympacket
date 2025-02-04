@@ -45,7 +45,7 @@ def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=N
             current_user.username = user
             current_hash.type = 'asrep'
             current_hash.value = asrep
-            current_user.krb_hash = current_hash
+            current_user.krb_hash = [current_hash]
             result.append(current_user)
             #user_result = {}
             #user_result['username'] = user

