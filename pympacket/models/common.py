@@ -10,6 +10,7 @@ class User(BaseModel):
     username: str = None
     krb_hash: list[Hash] = []
     nthash: str = None
+    aes256: str = None
     password: str = None
 
 class Computer(BaseModel):

