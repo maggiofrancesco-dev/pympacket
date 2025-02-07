@@ -2,7 +2,10 @@ from pympacket.cli import ImpacketCLI
 
 def main():
     cli = ImpacketCLI()
-    cli.cmdloop()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProgram execution interrupted, not saving stored data...\n")
 
 # Entry point of the script
 if __name__ == "__main__":

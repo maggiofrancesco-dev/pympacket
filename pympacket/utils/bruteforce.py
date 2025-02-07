@@ -28,7 +28,7 @@ def parse_asrep_hash(asrep_hash):
     """Parses the AS-REP hash and extracts components."""
     parts = asrep_hash.split('$')
     if len(parts) != 5 or parts[1] != 'krb5asrep' or parts[2] != '23':
-        raise ValueError("Invalid AS-REP hash format.")
+        raise ValueError("Invalid AS-REP hash format.\n")
 
     checksum = unhexlify(parts[3].split(':')[1])
     encrypted_data = unhexlify(parts[4])
@@ -42,7 +42,7 @@ def parse_tgs_hash(tgs_hash):
     """Parses the TGS hash and extracts components."""
     parts = tgs_hash.split('$')
     if len(parts) != 8 or parts[1] != 'krb5tgs' or parts[2] != '23':
-        raise ValueError("Invalid TGS hash format.")
+        raise ValueError("Invalid TGS hash format.\n")
 
     checksum = unhexlify(parts[6])
     encrypted_data = unhexlify(parts[7])

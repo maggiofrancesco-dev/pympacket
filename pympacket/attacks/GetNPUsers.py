@@ -257,7 +257,7 @@ class GetUserNoPreAuth:
             try:
                 ldapConnection = ldap.LDAPConnection('ldap://%s' % self.__target, self.baseDN, self.__kdcIP)
             except:
-                print("Unable to connect to LDAP Server.", file=sys.stderr)
+                print("Unable to connect to LDAP Server.\n", file=sys.stderr)
                 return None
             if self.__doKerberos is not True:
                 ldapConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
@@ -270,7 +270,7 @@ class GetUserNoPreAuth:
                 try:
                     ldapConnection = ldap.LDAPConnection('ldaps://%s' % self.__target, self.baseDN, self.__kdcIP)
                 except:
-                    print("Unable to connect to LDAP Server.", file=sys.stderr)
+                    print("Unable to connect to LDAP Server.\n", file=sys.stderr)
                     return None
                 if self.__doKerberos is not True:
                     ldapConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
@@ -279,7 +279,7 @@ class GetUserNoPreAuth:
                                                  self.__aesKey, kdcHost=self.__kdcIP)
             else:
                 # Cannot authenticate, we will try to get this users' TGT (hoping it has PreAuth disabled)
-                print("Invalid credentials provided.", file=sys.stderr)
+                print("Invalid credentials provided.\n", file=sys.stderr)
                 #entry = self.getTGT(self.__username) # mmmm
                 return None
 
@@ -304,9 +304,9 @@ class GetUserNoPreAuth:
                 pass
             else:
                 if str(e).find('NTLMAuthNegotiate') >= 0:
-                    print("NTLM Authentication failed, NTLM is probably disabled on the domain.", file=sys.stderr)
+                    print("NTLM Authentication failed, NTLM is probably disabled on the domain.\n", file=sys.stderr)
                 else:
-                    print("Error when querying LDAP for SPNs.", file=sys.stderr)
+                    print("Error when querying LDAP for SPNs.\n", file=sys.stderr)
 
                 return None
 
@@ -366,7 +366,7 @@ class GetUserNoPreAuth:
             with open(self.__usersFile) as fi:
                 usernames = [line.strip() for line in fi]
         except FileNotFoundError:
-            print("Can't find usersfile.")
+            print("Can't find usersfile.\n")
             return None
 
         return self.request_multiple_TGTs(usernames)
@@ -387,10 +387,10 @@ class GetUserNoPreAuth:
                 if "doesn't have UF_DONT_REQUIRE_PREAUTH set" in str(e):
                     pass
                 elif "SessionError: KDC_ERR_WRONG_REALM(Reserved for future use)" in str(e):
-                    print("The specified domain name is not valid.", file=sys.stderr)
+                    print("The specified domain name is not valid.\n", file=sys.stderr)
                     return None
                 elif "No route to host" in str(e) or "Connection timed out" in str(e):
-                    print("Host unreachable.", file=sys.stderr)
+                    print("Host unreachable.\n", file=sys.stderr)
                     return None
                 else:
                     print(str(e), file=sys.stderr)

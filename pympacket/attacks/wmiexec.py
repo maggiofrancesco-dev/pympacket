@@ -75,14 +75,14 @@ class WMIEXEC:
             try:
                 smbConnection = SMBConnection(addr, self.__remoteHost)
             except:
-                print("Host unreachable.", file=sys.stderr)
+                print("Host unreachable.\n", file=sys.stderr)
                 return None
             if self.__doKerberos is False:
                 # Modified
                 try:
                     smbConnection.login(self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash)
                 except:
-                    print("Invalid credentials provided.", file=sys.stderr)
+                    print("Invalid credentials provided.\n", file=sys.stderr)
                     return None
             else:
                 smbConnection.kerberosLogin(self.__username, self.__password, self.__domain, self.__lmhash,
@@ -104,7 +104,7 @@ class WMIEXEC:
             dcom = DCOMConnection(addr, self.__username, self.__password, self.__domain, self.__lmhash, self.__nthash,
                               self.__aesKey, oxidResolver=True, doKerberos=self.__doKerberos, kdcHost=self.__kdcHost, remoteHost=self.__remoteHost)
         except:
-            print("Unable to connect to DCOM.", file=sys.stderr)
+            print("Unable to connect to DCOM.\n", file=sys.stderr)
             return None
         try:
             # Modified
@@ -114,7 +114,7 @@ class WMIEXEC:
                 iWbemServices = iWbemLevel1Login.NTLMLogin('//./root/cimv2', NULL, NULL)
                 iWbemLevel1Login.RemRelease()
             except:
-                print("The user provided doesn't have enough privileges.", file=sys.stderr)
+                print("The user provided doesn't have enough privileges.\n", file=sys.stderr)
                 return None
 
             win32Process, _ = iWbemServices.GetObject('Win32_Process')

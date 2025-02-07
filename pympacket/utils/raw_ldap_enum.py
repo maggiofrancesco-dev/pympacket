@@ -14,23 +14,23 @@ class ldap_enum():
         try:
             server = ldap3.Server(host=target, port=389, use_ssl=False)
         except:
-            print("Host unreachable, the target provided must be the DC.", file=sys.stderr)
+            print("Host unreachable, the target provided must be the DC.\n", file=sys.stderr)
             return None, None
         if user == None or password == None:
             # Anonymous Bind
             try:
                 conn = ldap3.Connection(server, auto_bind=True, authentication=ldap3.ANONYMOUS)
             except:
-                print("Error during anonymous bind.", file=sys.stderr)
+                print("Error during anonymous bind.\n", file=sys.stderr)
                 return None, None
             if self.domain_sid(conn, domain_base) == None:
-                print("Anonymous login not available of this server.", file=sys.stderr)
+                print("Anonymous login not available of this server.\n", file=sys.stderr)
                 return None, None
         else: # NTLM Auth
             try:
                 conn = ldap3.Connection(server, user=f"{domain}\\{user}", password=password, auto_bind=True, authentication=ldap3.NTLM)
             except:
-                print("Invalid credentials provided.", file=sys.stderr)
+                print("Invalid credentials provided.\n", file=sys.stderr)
                 return None, None
         return conn, domain_base
 
