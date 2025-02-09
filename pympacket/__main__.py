@@ -3,7 +3,7 @@ from pympacket.cli import ImpacketCLI
 def main():
     cli = ImpacketCLI()
     try:
-        main()
+        cli.cmdloop()
     except KeyboardInterrupt:
         print("\nProgram execution interrupted, not saving stored data...\n")
 

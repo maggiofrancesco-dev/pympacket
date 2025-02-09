@@ -3,6 +3,7 @@ import json
 from pydantic import BaseModel
 from pympacket.models.common import User, Computer, Domain
 
+# Class to save on disk
 class Storage(BaseModel):
     users: list[User] = []
     computers: list[Computer] = []

@@ -27,6 +27,7 @@ def rc4_decrypt(key, data):
 def parse_asrep_hash(asrep_hash):
     """Parses the AS-REP hash and extracts components."""
     parts = asrep_hash.split('$')
+    # Must be a valid asrep hash and needs to be encrypted with RC4 (etype=23)
     if len(parts) != 5 or parts[1] != 'krb5asrep' or parts[2] != '23':
         raise ValueError("Invalid AS-REP hash format.\n")
 
@@ -41,6 +42,7 @@ def parse_asrep_hash(asrep_hash):
 def parse_tgs_hash(tgs_hash):
     """Parses the TGS hash and extracts components."""
     parts = tgs_hash.split('$')
+    # Must be a valid tgs hash and needs to be encrypted with RC4 (etype=23)
     if len(parts) != 8 or parts[1] != 'krb5tgs' or parts[2] != '23':
         raise ValueError("Invalid TGS hash format.\n")
 
@@ -56,32 +58,32 @@ def parse_tgs_hash(tgs_hash):
 def verify_hash(password, hash, hash_type):
     """Verifies if the provided password matches the given AS-REP/TGS hash."""
     if hash_type == 'asrep':
-        data = b'\x08\x00\x00\x00'  # Constant 4-byte input for HMAC-MD5
+        data = b'\x08\x00\x00\x00'  # Constant 4-byte input for HMAC-MD5 used for asrep hashes
         parsed_hash = parse_asrep_hash(hash)
     else:
-        data = b'\x02\x00\x00\x00'  # Constant 4-byte input for HMAC-MD5
+        data = b'\x02\x00\x00\x00'  # Constant 4-byte input for HMAC-MD5 used for tgs hashes
         parsed_hash = parse_tgs_hash(hash)
 
-    # Step 1: Convert password to UTF-16LE and compute the RC4-HMAC key
+    # Convert password to UTF-16LE and compute the RC4-HMAC key
     password_utf16 = utf16le_encode(password)
     rc4_key = md4_hash(password_utf16)
 
-    # Step 2: Compute K1 using HMAC-MD5 with the RC4 key and the constant data
+    # Compute K1 using HMAC-MD5 with the RC4 key and the constant data
     K1 = hmac_md5(rc4_key, data)
 
-    # Step 3: Compute K3 using HMAC-MD5 with K1 and the checksum (edata1)
+    # Compute K3 using HMAC-MD5 with K1 and the checksum (edata1)
     K3 = hmac_md5(K1, parsed_hash['checksum'])
 
-    # Step 4: Decrypt the first 32 bytes of the encrypted data (edata2) using RC4 with K3
+    # Decrypt the first 32 bytes of the encrypted data (edata2) using RC4 with K3
     encrypted_data = parsed_hash['encrypted_data']
 
-    # Step 5: Decrypt the remaining data
+    # Decrypt the remaining data
     decrypted_data = rc4_decrypt(K3, encrypted_data)
 
-    # Step 6: Compute the checksum of the decrypted data using HMAC-MD5 with K1
+    # Compute the checksum of the decrypted data using HMAC-MD5 with K1
     computed_checksum = hmac_md5(K1, decrypted_data)
 
-    # Step 7: Compare the computed checksum with the original checksum (edata1)
+    # Compare the computed checksum with the original checksum (edata1)
     return computed_checksum[:16] == parsed_hash['checksum']
 
 def bruteforce(wordlist, hash: Hash):
