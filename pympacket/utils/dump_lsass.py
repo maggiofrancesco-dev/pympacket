@@ -11,6 +11,12 @@ def dump_lsass(target, username, domain, password='', nthash=''):
     """Dumps the lsass process memory space and extracts credentials of curretly logged users"""
     logging.disable(sys.maxsize) # Disable lsassy logger (noisy)
 
+    if nthash == None:
+        nthash = ''
+    
+    if password == None:
+        password = ''
+
     # Start an SMB session against the target computer
     session = Session()
     session.get_session(

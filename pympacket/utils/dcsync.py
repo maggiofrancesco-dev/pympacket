@@ -9,6 +9,13 @@ from pympacket.models.common import User
 
 def dcsync(target, username, domain, password='', nthash=''):
     """Performs a DC Synchronization against a Domain Controller to retrieve all Domain User credentials from the synchronized NTDS.dit database"""
+    
+    if nthash == None:
+        nthash = ''
+    
+    if password == None:
+        password = ''
+    
     try:
         smb_conn = SMBConnection(target, target)
     except:
